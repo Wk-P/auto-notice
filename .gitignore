@@ -13,3 +13,4 @@ keys/
 cloudflared/
 var/
 .DS_Store
+scripts/
