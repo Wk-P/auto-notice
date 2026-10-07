@@ -101,6 +101,44 @@ def reminder_email(settings: Settings, subscriber: dict, entries: list[tuple]) -
     return subject, body
 
 
+_ACCOUNT_MAIL_STYLE = "font-family:Arial,sans-serif;max-width:600px;margin:auto;line-height:1.7;color:#17213b"
+
+
+def status_change_email(settings: Settings, subscriber: dict, status: str, by_admin: bool) -> tuple[str, str]:
+    """Confirms a pause, resume or unsubscribe, saying who made the change and how to undo it."""
+    who = "管理员已" if by_admin else "你已"
+    subscribe_url = f"{settings.app_base_url}/subscribe"
+    texts = {
+        "paused": ("订阅已暂停", f"{who}暂停 PNU Notice 订阅。暂停期间不会收到任何公告和截止提醒邮件，订阅设置会保留。",
+                   "想恢复时，点击下方“管理订阅”或登录网站，选择“重新启用订阅”。"),
+        "active": ("订阅已恢复", f"{who}恢复 PNU Notice 订阅，之后会继续按你的设置接收公告和截止提醒。",
+                   "暂停期间发布的公告不会补发。"),
+        "unsubscribed": ("已退订", f"{who}为你退订 PNU Notice。从现在起不会再收到公告和截止提醒邮件，这是最后一封确认邮件。"
+                         if by_admin else "你已退订 PNU Notice。从现在起不会再收到公告和截止提醒邮件，这是最后一封确认邮件。",
+                         f"如果是误操作，可以点击下方“管理订阅”重新启用，或在 {subscribe_url} 重新订阅。"),
+    }
+    title, line, hint = texts[status]
+    notice = "<p style='color:#667085;font-size:14px'>如果这不是你本人的操作，请检查账户安全并修改密码。</p>" if not by_admin else ""
+    body = (f"<main style='{_ACCOUNT_MAIL_STYLE}'><p style='color:#174b9b;font-weight:bold'>PNU Notice</p>"
+            f"<h1 style='font-size:22px'>{title}</h1><p>{html.escape(line)}</p><p>{html.escape(hint)}</p>{notice}"
+            f"{footer(settings, subscriber)}</main>")
+    return f"PNU Notice：{title}", body
+
+
+def account_deleted_email(settings: Settings, email: str, by_admin: bool) -> tuple[str, str]:
+    """Sent after the data is gone, so it carries no management links; only a way to subscribe again."""
+    title = "你的账户已被管理员删除" if by_admin else "你的账户已注销"
+    line = ("管理员已删除你在 PNU Notice 的账户，你的邮箱、订阅设置、密码和发信记录已被永久删除。" if by_admin
+            else "你的 PNU Notice 账户已经注销，邮箱、订阅设置、密码和发信记录已被永久删除。")
+    body = (f"<main style='{_ACCOUNT_MAIL_STYLE}'><p style='color:#174b9b;font-weight:bold'>PNU Notice</p>"
+            f"<h1 style='font-size:22px'>{title}</h1><p>{html.escape(line)}</p>"
+            f"<p>从现在起不会再收到任何邮件，这是最后一封。以后如果还想接收公告，可以随时"
+            f"<a href='{html.escape(settings.app_base_url)}/subscribe'>重新订阅</a>。</p>"
+            + ("" if by_admin else "<p style='color:#667085;font-size:14px'>如果这不是你本人的操作，请重新订阅并设置一个新密码。</p>")
+            + "</main>")
+    return f"PNU Notice：{title}", body
+
+
 def welcome_email(settings: Settings, subscriber: dict, subscriptions: list[dict]) -> tuple[str, str]:
     enabled = [SOURCE_BY_KEY[item["source_key"]].display_name for item in subscriptions
                if item["enabled"] and item["source_key"] in SOURCE_BY_KEY]

@@ -519,6 +519,55 @@ class AccountTests(unittest.TestCase):
                          ["还差一步：确认你的 PNU Notice 订阅", "欢迎订阅 PNU Notice"])
 
 
+    def test_status_change_and_deletion_send_notification_emails(self):
+        self._register("s@example.com")
+        self._set_password()
+
+        def mails_after(action):
+            before = len(self.mailer.sent)
+            action()
+            return [(to, subject, body) for to, subject, body in self.mailer.sent[before:]]
+
+        sent = mails_after(lambda: self.client.post("/account", {"csrf": self.client.csrf(), "action": "pause"}))
+        self.assertEqual([(m[0], m[1]) for m in sent], [("s@example.com", "PNU Notice：订阅已暂停")])
+        self.assertIn("你已暂停", sent[0][2])
+        self.assertEqual(mails_after(lambda: self.client.post("/account", {"csrf": self.client.csrf(), "action": "pause"})), [])
+        sent = mails_after(lambda: self.client.post("/account", {"csrf": self.client.csrf(), "action": "resume"}))
+        self.assertEqual(sent[0][1], "PNU Notice：订阅已恢复")
+        sent = mails_after(lambda: self.client.post("/account", {"csrf": self.client.csrf(), "action": "save",
+                                                                 "source": [SOURCES[1].key], "daily": "on"}))
+        self.assertEqual(sent, [])  # preference changes are not status changes
+
+        admin = self._admin_client()
+        with self.db.connect() as conn:
+            subscriber_id = conn.execute("SELECT id FROM subscribers WHERE email_normalized='s@example.com'").fetchone()[0]
+        sent = mails_after(lambda: admin.post("/admin/subscribers", {"csrf": admin.csrf("/admin/subscribers"),
+                                                                    "id": subscriber_id, "action": "unsubscribe"}))
+        self.assertEqual(sent[0][1], "PNU Notice：已退订")
+        self.assertIn("管理员已为你退订", sent[0][2])
+        self.assertIn("/subscription/manage?token=", sent[0][2])
+
+        sent = mails_after(lambda: self.client.post("/account/delete", {"csrf": self.client.csrf(),
+                                                                        "current_password": "pnu-notice-2026"}))
+        self.assertEqual([(m[0], m[1]) for m in sent], [("s@example.com", "PNU Notice：你的账户已注销")])
+        self.assertNotIn("token=", sent[0][2])  # data is gone, so no management links
+
+        self._register("t@example.com")
+        with self.db.connect() as conn:
+            other = conn.execute("SELECT id FROM subscribers WHERE email_normalized='t@example.com'").fetchone()[0]
+        sent = mails_after(lambda: admin.post("/admin/subscribers", {"csrf": admin.csrf("/admin/subscribers"),
+                                                                    "id": other, "action": "delete"}))
+        self.assertEqual([(m[0], m[1]) for m in sent], [("t@example.com", "PNU Notice：你的账户已被管理员删除")])
+
+        self.client.cookies.clear()
+        self.client.post("/subscribe", {"email": "never@example.com", "source": [SOURCES[0].key], "daily": "on"})
+        with self.db.connect() as conn:
+            pending = conn.execute("SELECT id FROM subscribers WHERE email_normalized='never@example.com'").fetchone()[0]
+        sent = mails_after(lambda: admin.post("/admin/subscribers", {"csrf": admin.csrf("/admin/subscribers"),
+                                                                    "id": pending, "action": "delete"}))
+        self.assertEqual(sent, [])  # an address that never confirmed is not written to
+
+
 
 if __name__ == "__main__":
     unittest.main()

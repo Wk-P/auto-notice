@@ -745,11 +745,11 @@ class WebApp:
         if path == "/admin/subscribers" and method == "POST":
             action = request.field("action")
             if action in ("pause", "resume", "unsubscribe"):
-                self.subscriptions.update_subscriber(int(request.field("id")), [], False, False, False, action)
+                self.subscriptions.update_subscriber(int(request.field("id")), [], False, False, False, action, by_admin=True)
                 message = {"pause": "已暂停该订阅。", "resume": "已恢复该订阅。", "unsubscribe": "已替该用户退订。"}[action]
             elif action == "delete":
                 try:
-                    email = self.accounts.delete_person(subscriber_id=int(request.field("id")))
+                    email = self.accounts.delete_person(subscriber_id=int(request.field("id")), by_admin=True)
                     message = f"已永久删除 {email} 的所有数据。"
                 except ValueError as exc:
                     message = str(exc)

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from .config import Settings
 from .db import Database
-from .emailer import ResendMailer, welcome_email
+from .emailer import ResendMailer, status_change_email, welcome_email
 from .security import management_token, random_token, token_hash
 from .sources import SOURCE_BY_KEY
 from .timeutil import iso_utc, now_utc
@@ -148,6 +148,30 @@ class SubscriptionService:
             self.send_welcome(subscriber_id, now)
         return raw_management
 
+    def _send_status_email(self, subscriber_id: int, status: str, by_admin: bool) -> None:
+        """One confirmation per status change; a failure is logged and never reverts the change."""
+        subscriber, _ = self.get(subscriber_id)
+        if not subscriber.get("management_token_created_at"):
+            return  # never verified, so there is no confirmed mailbox to write to
+        now = iso_utc()
+        with self.db.transaction() as conn:
+            delivery_id = conn.execute(
+                """INSERT INTO notification_deliveries(subscriber_id,notification_type,dedupe_key,scheduled_at,status,
+                   payload_json,created_at) VALUES(?,'status_change',?,?,'sending',?,?)""",
+                (subscriber_id, f"status:{status}:{now}", now, json.dumps({"status": status, "by_admin": by_admin}), now)).lastrowid
+        subject, body = status_change_email(self.settings, subscriber, status, by_admin)
+        try:
+            provider_id = self.mailer.send(subscriber["email"], subject, body, f"status-{subscriber_id}-{now}"[:250])
+            with self.db.transaction() as conn:
+                conn.execute("UPDATE notification_deliveries SET status='sent',sent_at=?,provider_message_id=? WHERE id=?",
+                             (iso_utc(), provider_id, delivery_id))
+        except Exception as exc:
+            with self.db.transaction() as conn:
+                conn.execute("UPDATE notification_deliveries SET status='failed',error=?,attempts=1 WHERE id=?",
+                             (str(exc)[:2000], delivery_id))
+                conn.execute("INSERT INTO job_failures(component,source_key,error_message,occurred_at) VALUES(?,?,?,?)",
+                             ("account_email", None, str(exc)[:2000], iso_utc()))
+
     def send_welcome(self, subscriber_id: int, verified_at: str) -> None:
         """Welcome email on first activation (or re-activation). A failure is logged and never undoes the subscription."""
         subscriber, subscriptions = self.get(subscriber_id)
@@ -200,19 +224,23 @@ class SubscriptionService:
         self.update_subscriber(subscriber["id"], source_keys, immediate, daily, weekly, action)
 
     def update_subscriber(self, subscriber_id: int, source_keys: list[str], immediate: bool, daily: bool,
-                          weekly: bool, action: str = "save") -> None:
+                          weekly: bool, action: str = "save", by_admin: bool = False) -> None:
         subscriber, _ = self.get(subscriber_id)
         now = iso_utc()
+        new_status = {"unsubscribe": "unsubscribed", "pause": "paused", "resume": "active"}.get(action)
+        if new_status:
+            if new_status == subscriber["status"]:
+                return  # nothing changes, so no confirmation email either
+            with self.db.transaction() as conn:
+                if new_status == "unsubscribed":
+                    conn.execute("UPDATE subscribers SET status='unsubscribed',unsubscribed_at=? WHERE id=?", (now, subscriber_id))
+                elif new_status == "paused":
+                    conn.execute("UPDATE subscribers SET status='paused' WHERE id=?", (subscriber_id,))
+                else:
+                    conn.execute("UPDATE subscribers SET status='active',unsubscribed_at=NULL WHERE id=?", (subscriber_id,))
+            self._send_status_email(subscriber_id, new_status, by_admin)
+            return
         with self.db.transaction() as conn:
-            if action == "unsubscribe":
-                conn.execute("UPDATE subscribers SET status='unsubscribed',unsubscribed_at=? WHERE id=?", (now, subscriber["id"]))
-                return
-            if action == "pause":
-                conn.execute("UPDATE subscribers SET status='paused' WHERE id=?", (subscriber["id"],))
-                return
-            if action == "resume":
-                conn.execute("UPDATE subscribers SET status='active',unsubscribed_at=NULL WHERE id=?", (subscriber["id"],))
-                return
             selected = list(dict.fromkeys(source_keys))
             if not selected or any(key not in SOURCE_BY_KEY for key in selected):
                 raise ValueError("请至少选择一个公告来源。")

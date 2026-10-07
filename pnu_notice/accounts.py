@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from .config import Settings
 from .db import Database
-from .emailer import ResendMailer
+from .emailer import ResendMailer, account_deleted_email
 from .security import random_token, token_hash
 from .timeutil import SEOUL, iso_utc, now_utc
 
@@ -227,7 +227,7 @@ class AccountService:
             conn.execute("DELETE FROM sessions WHERE account_id=?", (account["id"],))
         return self.create_session(self.get(account["id"]))
 
-    def delete_person(self, subscriber_id: int | None = None, account_id: int | None = None) -> str:
+    def delete_person(self, subscriber_id: int | None = None, account_id: int | None = None, by_admin: bool = False) -> str:
         """Permanently removes everything stored about one person: subscriber, subscriptions, verifications,
         delivery history (including pending jobs), account, sessions and reset tokens. Returns the email removed.
         Administrators are refused so the site can never be left without one."""
@@ -251,4 +251,17 @@ class AccountService:
                     conn.execute(f"DELETE FROM {table} WHERE subscriber_id=?", (subscriber["id"],))
                 conn.execute("DELETE FROM subscribers WHERE id=?", (subscriber["id"],))
             conn.execute("DELETE FROM password_resets WHERE email_normalized=?", (normalized,))
+            verified = bool(subscriber and subscriber["verified_at"]) or bool(account and account["password_hash"])
+        if verified:
+            self._send_deleted_email(email, by_admin)
         return email
+
+    def _send_deleted_email(self, email: str, by_admin: bool) -> None:
+        """Sent after the data is gone, so nothing is recorded per person; a failure is only logged."""
+        subject, body = account_deleted_email(self.settings, email, by_admin)
+        try:
+            self.mailer.send(email, subject, body, f"deleted-{self._hash(email + iso_utc())[:32]}")
+        except Exception as exc:
+            with self.db.transaction() as conn:
+                conn.execute("INSERT INTO job_failures(component,source_key,error_message,occurred_at) VALUES(?,?,?,?)",
+                             ("account_email", None, str(exc)[:2000], iso_utc()))
