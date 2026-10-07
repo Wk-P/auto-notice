@@ -6,9 +6,9 @@
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/images/home-mobile.jpg" alt="pnu.knettf.com 首页（手机）" width="240"></td>
-    <td align="center"><img src="docs/images/email-important.jpg" alt="重要公告即时邮件" width="240"></td>
-    <td align="center"><img src="docs/images/email-digest.jpg" alt="定时汇总邮件" width="240"></td>
+    <td align="center"><img src="pnu_notice/static/screenshots/home-mobile.jpg" alt="pnu.knettf.com 首页（手机）" width="240"></td>
+    <td align="center"><img src="pnu_notice/static/screenshots/email-important.jpg" alt="重要公告即时邮件" width="240"></td>
+    <td align="center"><img src="pnu_notice/static/screenshots/email-digest.jpg" alt="定时汇总邮件" width="240"></td>
   </tr>
   <tr>
     <td align="center"><sub>pnu.knettf.com 首页（手机）</sub></td>

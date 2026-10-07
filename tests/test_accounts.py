@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 import tempfile
 import unittest
@@ -46,7 +47,7 @@ class Client:
         def start_response(status, headers):
             captured["status"], captured["headers"] = int(status.split()[0]), headers
 
-        page = b"".join(self.app(environ, start_response)).decode()
+        page = b"".join(self.app(environ, start_response)).decode(errors="replace")
         for name, value in captured["headers"]:
             if name == "Set-Cookie":
                 cookie = SimpleCookie(value)
@@ -354,6 +355,88 @@ class AccountTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.accounts.delete_person(account_id=self.accounts.authenticate("admin@example.com", "admin-pass-2026")["id"])
         self.assertNotIn("永久注销", admin.get("/account")[1])
+
+
+    def test_home_page_shows_screenshots_and_serves_only_whitelisted_files(self):
+        page = self.client.get("/")[1]
+        self.assertIn("实际效果", page)
+        for name in ("home-mobile.jpg", "email-important.jpg", "email-digest.jpg"):
+            self.assertIn(f"/static/screenshots/{name}", page)
+            status, _, _ = self.client.get(f"/static/screenshots/{name}")
+            self.assertEqual(status, 200)
+        self.assertEqual(self.client.get("/static/screenshots/../../config.py")[0], 404)
+        self.assertEqual(self.client.get("/static/screenshots/other.jpg")[0], 404)
+
+
+    def test_full_rehearsal_two_addresses_through_unsubscribe(self):
+        """Mirrors the manual launch test: subscribe, verify, receive a notice, manage, unsubscribe, receive nothing."""
+        from pnu_notice.crawler import Crawler, NoticeDetail
+        from pnu_notice.delivery import DeliveryWorker
+        from datetime import datetime
+        from pnu_notice.timeutil import SEOUL
+        detail = NoticeDetail("501", "졸업 요건 안내", "https://cse.pusan.ac.kr/bbs/cse/2055/501/artclView.do", "작성자",
+                              datetime(2026, 10, 7, 10, tzinfo=SEOUL), "학사", "<p>본문</p>", "졸업 요건 본문", [])
+        _, notice_id = Crawler(self.db, self.settings).save(SOURCES[0], detail, True)
+        with self.db.transaction() as conn:
+            content_hash = conn.execute("SELECT content_hash FROM notices").fetchone()[0]
+            conn.execute("INSERT INTO ai_analyses(notice_id,content_hash,result_json,model,created_at) VALUES(?,?,?,?,?)",
+                         (notice_id, content_hash, json.dumps({**self._analysis_dict(), "title_zh": "毕业要求通知"}), "t", iso_utc()))
+            conn.execute("UPDATE notices SET ai_status='completed'")
+        users = {}
+        for email in ("a@example.com", "b@example.com"):
+            browser = Client(self.client.app)
+            browser.post("/subscribe", {"email": email, "source": [s.key for s in SOURCES], "immediate": "on", "daily": "on"})
+            self.assertIn("还差一步", self.mailer.sent[-1][1])
+            browser.get(f"/verify?token={self.mailer.last_link('/verify')}")
+            self.assertEqual(self.mailer.sent[-1][1], "欢迎订阅 PNU Notice")
+            with self.db.connect() as conn:
+                users[email] = (browser, conn.execute("SELECT id FROM subscribers WHERE email_normalized=?", (email,)).fetchone()[0])
+        admin = self._admin_client()
+        worker = DeliveryWorker(self.db, self.settings, self.mailer)
+
+        def test_send(email):
+            admin.post(f"/admin/notices/{notice_id}", {"csrf": admin.csrf(f"/admin/notices/{notice_id}"),
+                                                      "action": "test_send", "subscriber_id": users[email][1]})
+            before = len(self.mailer.sent)
+            worker.process_due()
+            return self.mailer.sent[before:]
+
+        received = test_send("a@example.com")
+        self.assertEqual(len(received), 1)
+        to, subject, body = received[0]
+        self.assertEqual(to, "a@example.com")
+        self.assertTrue(subject.startswith("[测试] "))
+        self.assertIn("毕业要求通知", subject)
+        unsubscribe_link = re.search(r"/unsubscribe\?token=([^'\"&]+)", body).group(1)
+
+        browser_a = users["a@example.com"][0]
+        browser_a.post("/account/password", {"csrf": browser_a.csrf(), "new_password": "pnu-test-2026",
+                                             "confirm_password": "pnu-test-2026"})
+        browser_a.post("/logout", {"csrf": browser_a.csrf()})
+        browser_a.post("/login", {"email": "a@example.com", "password": "pnu-test-2026"})
+        browser_a.post("/account", {"csrf": browser_a.csrf(), "action": "save", "source": [SOURCES[0].key], "immediate": "on"})
+        with self.db.connect() as conn:
+            self.assertEqual([r[0] for r in conn.execute("SELECT source_key FROM subscriptions WHERE subscriber_id=? AND enabled=1",
+                                                         (users["a@example.com"][1],))], [SOURCES[0].key])
+
+        mail_client = Client(self.client.app)  # the unsubscribe link is opened from the email, signed out
+        self.assertIn("确认退订", mail_client.get(f"/unsubscribe?token={unsubscribe_link}")[1])
+        mail_client.post("/subscription/manage", {"token": unsubscribe_link, "action": "unsubscribe"})
+
+        self.assertEqual(test_send("a@example.com"), [])  # unsubscribed: nothing goes out
+        with self.db.connect() as conn:
+            last = conn.execute("SELECT status FROM notification_deliveries WHERE subscriber_id=? ORDER BY id DESC LIMIT 1",
+                                (users["a@example.com"][1],)).fetchone()[0]
+        self.assertEqual(last, "cancelled")
+        self.assertIn("未发送", admin.get(f"/admin/notices/{notice_id}")[1])
+        self.assertEqual([to for to, _, _ in test_send("b@example.com")], ["b@example.com"])  # B is unaffected
+
+    @staticmethod
+    def _analysis_dict():
+        return {"title_zh": "", "summary_zh": "摘要", "categories": [], "audience": ["undergraduate"],
+                "action_required": True, "actions": [], "deadlines": [], "eligibility": [], "required_documents": [],
+                "importance": "high", "delivery_priority": "immediate", "warnings": [], "status": "active",
+                "attachment_requires_review": False, "confidence": 0.9}
 
 
 

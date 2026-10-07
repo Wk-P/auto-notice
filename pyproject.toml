@@ -18,5 +18,8 @@ pnu-notice = "pnu_notice.cli:main"
 [tool.setuptools.packages.find]
 include = ["pnu_notice*"]
 
+[tool.setuptools.package-data]
+pnu_notice = ["static/screenshots/*.jpg"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

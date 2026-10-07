@@ -4,6 +4,7 @@ import html
 import json
 import re
 import traceback
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
 from http import HTTPStatus
@@ -19,6 +20,9 @@ from .timeutil import SEOUL
 from .subscriptions import SubscriptionService
 
 SESSION_COOKIE = "pnu_session"
+# Only these files are served from /static/screenshots/, so the route cannot be used to read anything else.
+SCREENSHOT_DIR = Path(__file__).parent / "static" / "screenshots"
+SCREENSHOTS = ("home-mobile.jpg", "email-important.jpg", "email-digest.jpg")
 CSRF_PROTECTED = {"/logout", "/account", "/account/password", "/account/delete", "/admin/subscribers", "/admin/notices"}
 TURNSTILE_ACTION = "subscribe"
 STATUS_LABELS = admin.STATUS_LABELS
@@ -50,13 +54,16 @@ box-shadow:0 30px 60px -20px #0a2a5780;position:relative;overflow:hidden}
 .cards3,.cards4{display:grid;gap:16px;margin-bottom:56px}.cards3{grid-template-columns:repeat(3,minmax(0,1fr))}.cards4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .feature{background:#fff;border:1px solid #e2e6ef;border-radius:18px;padding:24px;transition:transform .2s,box-shadow .2s}.feature:hover{transform:translateY(-3px);box-shadow:0 16px 32px -16px #182b4d40}
 .feature .icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:#eef4ff;margin-bottom:14px}.feature h3{margin:0 0 6px;font-size:17px}.feature p{margin:0;color:#667085;line-height:1.65;font-size:14px}
+.showcase{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-bottom:56px;align-items:start}
+.showcase figure{margin:0;text-align:center}.showcase img{width:100%;max-width:300px;height:auto;border-radius:28px;border:8px solid #0f1b2e;
+box-shadow:0 24px 48px -20px #0a2a5799;background:#0f1b2e}.showcase figcaption{margin-top:14px;font-weight:700}.showcase figcaption span{display:block;font-weight:400;color:#667085;font-size:14px;margin-top:2px}
 .num{font-size:13px;font-weight:800;color:#174b9b;letter-spacing:.08em;margin-bottom:10px}
 .cta{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding:36px 40px;border-radius:24px;background:linear-gradient(135deg,#fff6d6,#ffe8a3);margin-bottom:24px}.cta h2{margin:0 0 6px;font-size:24px}.cta p{margin:0;color:#6e4b00}
 .site-footer{background:#0a1f40;color:#9fb3d6;margin-top:64px;padding:48px 6vw 28px;font-size:14px}.footer-inner{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:32px}
 .site-footer h4{color:#fff;font-size:14px;margin:0 0 12px}.site-footer a{color:#c9d6ee;text-decoration:none;display:block;margin:7px 0}.site-footer a:hover{color:#fff}.site-footer a.inline-link{display:inline;margin:0;color:#c9d6ee}
 .site-footer .about{line-height:1.7;margin:12px 0 0;max-width:320px}.footer-brand{display:flex;gap:10px;align-items:center;color:#fff;font-weight:800;font-size:18px}
 .copyright{max-width:1180px;margin:36px auto 0;padding-top:20px;border-top:1px solid #ffffff1a;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:#7f93b8}
-@media(max-width:860px){.home-hero{grid-template-columns:1fr;padding:32px 24px}.mail{transform:none}.strip,.cards4{grid-template-columns:repeat(2,minmax(0,1fr))}.cards3{grid-template-columns:1fr}
+@media(max-width:860px){.showcase{grid-template-columns:1fr;gap:36px}.showcase img{max-width:280px}.home-hero{grid-template-columns:1fr;padding:32px 24px}.mail{transform:none}.strip,.cards4{grid-template-columns:repeat(2,minmax(0,1fr))}.cards3{grid-template-columns:1fr}
 .footer-inner{grid-template-columns:1fr 1fr}.cta{padding:28px 24px}}
 .hero{padding:42px;background:linear-gradient(135deg,#0d3d7a,#1966bd);color:#fff;border-radius:24px;box-shadow:0 18px 45px #173c7826}
 .hero h1{font-size:clamp(30px,6vw,52px);line-height:1.1;margin:0 0 18px}.lead{font-size:18px;line-height:1.7;color:#dfeeff;margin:0 0 26px}
@@ -233,6 +240,15 @@ def home_page(view: View, deleted: bool = False, stats: dict | None = None) -> s
 
     <div class="strip"><div><b>3 个</b><span>官方公告来源</span></div><div><b>15 分钟</b><span>检查一次学校网站</span></div>
     <div><b>3 小时内</b><span>工作日普通公告送达</span></div><div><b>中文摘要</b><span>每条都附学校原文链接</span></div></div>
+
+    <h2 class="section-title">实际效果</h2><p class="section-sub">真实的网站和邮件截图</p>
+    <div class="showcase">
+    <figure><img src="/static/screenshots/home-mobile.jpg" alt="PNU Notice 网站首页（手机）" loading="lazy" width="300" height="611">
+    <figcaption>网站首页<span>手机上也能订阅和管理</span></figcaption></figure>
+    <figure><img src="/static/screenshots/email-important.jpg" alt="重要公告即时提醒邮件" loading="lazy" width="300" height="652">
+    <figcaption>重要公告即时提醒<span>中文摘要、截止时间、适合人群一目了然</span></figcaption></figure>
+    <figure><img src="/static/screenshots/email-digest.jpg" alt="普通公告定时汇总邮件" loading="lazy" width="300" height="652">
+    <figcaption>定时汇总<span>工作日 {hours} 合并发送</span></figcaption></figure></div>
 
     <h2 class="section-title">三步开始</h2><p class="section-sub">不用安装 App，也不用注册复杂的账户</p>
     <div class="cards3"><div class="feature"><div class="num">01</div><h3>选择公告</h3><p>填写邮箱，勾选计算机本科、计算机大学院、国际处中你关心的来源。</p></div>
@@ -444,6 +460,16 @@ class WebApp:
               wide: bool = False):
         return self._response(start_response, layout(view, content, title, wide), status)
 
+    @staticmethod
+    def _screenshot(start_response, name: str):
+        if name not in SCREENSHOTS:
+            start_response("404 Not Found", [("Content-Type", "text/plain")])
+            return [b"not found"]
+        data = (SCREENSHOT_DIR / name).read_bytes()
+        start_response("200 OK", [("Content-Type", "image/jpeg"), ("Content-Length", str(len(data))),
+                                  ("Cache-Control", "public, max-age=86400"), ("X-Content-Type-Options", "nosniff")])
+        return [data]
+
     def _session_cookie(self, token: str | None) -> tuple[str, str]:
         secure = "; Secure" if self.secure_cookie else ""
         if token is None:
@@ -483,6 +509,8 @@ class WebApp:
         if path == "/" and method == "GET":
             return self._page(start_response, view, home_page(view, bool(request.arg("deleted")), self._site_stats()),
                               "PNU Notice", wide=True)
+        if path.startswith("/static/screenshots/") and method == "GET":
+            return self._screenshot(start_response, path.rsplit("/", 1)[-1])
         if path == "/static/admin.js" and method == "GET":
             return self._response(start_response, admin.ADMIN_JS, content_type="text/javascript; charset=utf-8")
         if path == "/static/check-email.js" and method == "GET":
@@ -732,6 +760,12 @@ class WebApp:
         if detail and method == "POST" and request.field("action") == "reanalyze":
             admin.reanalyze(db, int(detail.group(1)))
             message = "已加入 AI 分析队列，一两分钟后刷新即可看到新结果。"
+        if detail and method == "POST" and request.field("action") == "test_send":
+            try:
+                email = admin.queue_test_email(db, int(detail.group(1)), int(request.field("subscriber_id") or 0))
+                message = f"测试邮件已放入发信队列，约 1 分钟内发给 {email}。刷新本页可在“发信记录”里看到结果。"
+            except ValueError as exc:
+                message = str(exc)
         if detail:
             page, active = admin.notice_detail(db, view.csrf, int(detail.group(1))), "/admin/notices"
             if page is None:

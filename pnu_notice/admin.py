@@ -424,8 +424,10 @@ def notice_detail(db: Database, csrf: str, notice_id: int) -> tuple[str, str, st
                                     (notice_id, notice["content_hash"])).fetchone()
         attachments = conn.execute("SELECT filename,url,extension FROM attachments WHERE notice_id=?", (notice_id,)).fetchall()
         deliveries = conn.execute(
-            """SELECT notification_type,status,COUNT(*),MAX(COALESCE(sent_at,scheduled_at)) FROM notification_deliveries
-               WHERE notice_id=? GROUP BY notification_type,status ORDER BY notification_type""", (notice_id,)).fetchall()
+            """SELECT d.notification_type,d.status,d.scheduled_at,d.sent_at,d.error,d.payload_json,s.email
+               FROM notification_deliveries d JOIN subscribers s ON s.id=d.subscriber_id
+               WHERE d.notice_id=? ORDER BY d.id DESC LIMIT 30""", (notice_id,)).fetchall()
+        recipients = conn.execute("SELECT id,email,status FROM subscribers ORDER BY email").fetchall()
         revisions = conn.execute("SELECT COUNT(*) FROM notice_revisions WHERE notice_id=?", (notice_id,)).fetchone()[0]
     analysis = _analysis(analysis_row["result_json"]) if analysis_row else {}
     ai_label, ai_tone = AI_STATES.get(notice["ai_status"], (notice["ai_status"], "gray"))
@@ -480,19 +482,65 @@ def notice_detail(db: Database, csrf: str, notice_id: int) -> tuple[str, str, st
     else:
         attachment_html = '<p class="muted" style="margin:0">没有附件</p>'
     if deliveries:
-        delivery_rows = "".join(
-            f'<tr><td>{DELIVERY_TYPES.get(row[0], esc(row[0]))}</td><td>{DELIVERY_STATUS.get(row[1], esc(row[1]))}</td>'
-            f'<td class="nowrap">{row[2]}</td></tr>' for row in deliveries)
-        delivery_html = f'<table><thead><tr><th>类型</th><th>状态</th><th>数量</th></tr></thead><tbody>{delivery_rows}</tbody></table>'
+        delivery_rows = ""
+        for row in deliveries:
+            kind = DELIVERY_TYPES.get(row["notification_type"], esc(row["notification_type"]))
+            if json.loads(row["payload_json"] or "{}").get("test"):
+                kind = "测试 · " + kind
+            tone = {"sent": "green", "failed": "red", "cancelled": "gray"}.get(row["status"], "amber")
+            reason = (f'<div class="small muted">{esc(_explain_delivery(row["error"]))}</div>'
+                      if row["error"] and row["status"] != "sent" else "")
+            delivery_rows += (f'<tr><td>{esc(row["email"])}<div class="small muted">{kind}</div></td>'
+                              f'<td>{badge(DELIVERY_STATUS.get(row["status"], row["status"]), tone)}{reason}</td>'
+                              f'<td class="nowrap">{ago(row["sent_at"] or row["scheduled_at"])}</td></tr>')
+        delivery_html = (f'<table><thead><tr><th>收件人</th><th>状态</th><th>时间</th></tr></thead>'
+                         f'<tbody>{delivery_rows}</tbody></table>')
     elif notice["historical_import"]:
         delivery_html = '<p class="muted" style="margin:0">历史公告不发送邮件</p>'
     else:
         delivery_html = '<p class="muted" style="margin:0">还没有发信任务</p>'
+    if analysis_row and recipients:
+        options = "".join(f'<option value="{row["id"]}">{esc(row["email"])}（{STATUS_LABELS.get(row["status"], row["status"])}）</option>'
+                          for row in recipients)
+        test_html = (f'<p class="small muted" style="margin-top:0">把这条公告当作一封真实的即时公告邮件放入发信队列，'
+                     f'约 1 分钟内发出，标题前加“[测试]”。发送前同样会检查对方是否仍在接收：已暂停或已退订的不会发出。</p>'
+                     f'<form method="post" action="/admin/notices/{notice_id}"><input type="hidden" name="csrf" value="{csrf}">'
+                     f'<select name="subscriber_id" style="width:100%;padding:7px;border:1px solid #d0d5dd;border-radius:8px;'
+                     f'font:inherit;margin-bottom:8px">{options}</select>'
+                     f'<button class="btn ghost" name="action" value="test_send">发送测试邮件</button></form>')
+    elif not analysis_row:
+        test_html = '<p class="muted small" style="margin:0">这条公告还没有分析结果，暂时不能发送测试邮件。</p>'
+    else:
+        test_html = '<p class="muted small" style="margin:0">还没有订阅者。</p>'
     side = (f'<div class="panel"><h2>公告信息</h2>{info_html}</div><div class="panel"><h2>附件</h2>{attachment_html}</div>'
-            f'<div class="panel"><h2>发信记录</h2>{delivery_html}</div>')
+            f'<div class="panel"><h2>发信记录</h2>{delivery_html}</div><div class="panel"><h2>发送测试邮件</h2>{test_html}</div>')
     title = analysis.get("title_zh") or notice["original_title"]
     subtitle = '<a class="back" href="/admin/notices">← 返回公告列表</a><br>' + esc(notice["original_title"])
     return title, subtitle, actions + f'<div class="split"><div>{main}</div><div>{side}</div></div>'
+
+
+def _explain_delivery(error: str | None) -> str:
+    error = error or ""
+    if "no longer eligible" in error:
+        return "订阅者已暂停、退订或关闭了这类通知，未发送"
+    if "superseded" in error:
+        return "公告内容已更新，改发新版本"
+    return _explain(error)
+
+
+def queue_test_email(db: Database, notice_id: int, subscriber_id: int) -> str:
+    """Queues one real notice email through the normal delivery path (same template, links and eligibility check)."""
+    now = iso_utc()
+    with db.transaction() as conn:
+        notice = conn.execute("SELECT n.id FROM notices n JOIN ai_analyses a ON a.notice_id=n.id AND a.content_hash=n.content_hash "
+                              "WHERE n.id=?", (notice_id,)).fetchone()
+        subscriber = conn.execute("SELECT email FROM subscribers WHERE id=?", (subscriber_id,)).fetchone()
+        if not notice or not subscriber:
+            raise ValueError("公告还没有分析结果，或订阅者不存在。")
+        conn.execute("""INSERT INTO notification_deliveries(subscriber_id,notice_id,notification_type,dedupe_key,scheduled_at,
+                        status,payload_json,created_at) VALUES(?,?,'new_notice',?,?,'pending',?,?)""",
+                     (subscriber_id, notice_id, f"test:{notice_id}:{now}", now, json.dumps({"test": True}), now))
+    return subscriber["email"]
 
 
 def reanalyze(db: Database, notice_id: int) -> None:

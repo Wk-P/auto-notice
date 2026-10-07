@@ -214,6 +214,8 @@ class DeliveryWorker:
                     subject, body = notice_email(self.settings, subscriber, entries[0][0], entries[0][1], kind)
                     if kind.startswith("deadline_"):
                         subject = f"[截止提醒] {subject.removeprefix('[重要公告] ')}"
+                    if json.loads(batch[0]["payload_json"] or "{}").get("test"):
+                        subject = f"[测试] {subject}"
                 key = "delivery-" + "-".join(str(value) for value in ids)
                 provider_id = self.mailer.send(subscriber["email"], subject, body, key[:250])
                 with self.db.transaction() as conn:
