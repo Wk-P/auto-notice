@@ -13,7 +13,8 @@ from pnu_notice.ai import AIWorker, OpenAIAnalyzer
 from pnu_notice.config import Settings
 from pnu_notice.crawler import Attachment, Crawler, DiscoveredNotice, NoticeDetail, parse_detail, parse_list_page, parse_rss
 from pnu_notice.db import Database
-from pnu_notice.delivery import DeliveryPlanner, DeliveryWorker, next_digest_slot
+from pnu_notice.delivery import (DeliveryPlanner, DeliveryWorker, ReminderPlanner, is_student_deadline,
+                                 next_digest_slot, reminder_time)
 from pnu_notice.sources import SOURCES
 from pnu_notice.subscriptions import SubscriptionService
 from pnu_notice.web import WebApp
@@ -183,12 +184,12 @@ class PnuNoticeTests(unittest.TestCase):
         with self.db.connect() as conn:
             self.assertEqual(conn.execute("SELECT status FROM notification_deliveries").fetchone()[0], "cancelled")
 
-    def _active_subscriber(self, immediate=1, daily=1, weekly=1):
+    def _active_subscriber(self, immediate=1, daily=1, weekly=1, email="a@example.com"):
         now = iso_utc()
         with self.db.transaction() as conn:
             subscriber_id = conn.execute(
                 """INSERT INTO subscribers(email,email_normalized,status,created_at,management_token_hash,
-                   management_token_created_at) VALUES('a@example.com','a@example.com','active',?,'hash',?)""", (now, now)
+                   management_token_created_at) VALUES(?,?,'active',?,'hash',?)""", (email, email, now, now)
             ).lastrowid
             conn.execute("""INSERT INTO subscriptions(subscriber_id,source_key,enabled,immediate_enabled,
                             daily_digest_enabled,weekly_digest_enabled,created_at,updated_at)
@@ -407,6 +408,94 @@ class PnuNoticeTests(unittest.TestCase):
         self.assertIn("2026-10-07 16:18", body)
         self.assertIn("本科生、应届毕业生", body)
         self.assertNotIn("graduating_student", body)
+
+
+    def test_only_student_action_deadlines_are_reminded(self):
+        for kind in ("报名截止", "申请截止", "材料提交截止", "选课取消（W）申请截止", "缴费期限", "Application deadline"):
+            self.assertTrue(is_student_deadline(kind, 0.9), kind)
+        for kind in ("活动时间", "考试（第一场）", "期中考试结束", "预计成绩公布", "申请期间开始",
+                     "学院向教育创新室提交申请审查请求的截止日期（非学生申请期限）"):
+            self.assertFalse(is_student_deadline(kind, 0.9), kind)
+        self.assertFalse(is_student_deadline("报名截止", 0.4))  # the AI itself was unsure
+
+    def test_reminder_times_follow_the_morning_slot(self):
+        hours = (10, 13, 16, 19)
+        def at(deadline, days):
+            return reminder_time(datetime(*deadline, tzinfo=SEOUL), days, hours).strftime("%m-%d %H:%M")
+        self.assertEqual(at((2026, 10, 16, 15, 0), 7), "10-09 10:00")
+        self.assertEqual(at((2026, 10, 16, 15, 0), 1), "10-15 10:00")
+        self.assertEqual(at((2026, 10, 16, 15, 0), 0), "10-16 10:00")
+        self.assertEqual(at((2026, 10, 16, 11, 0), 0), "10-15 19:00")  # 10:00 would be under 2 hours before
+        self.assertEqual(at((2026, 10, 18, 23, 59), 0), "10-18 10:00")  # weekends too
+        self.assertEqual(at((2026, 10, 8, 0, 0), 0), "10-08 10:00")  # date-only deadline means end of that day
+        self.assertEqual(at((2026, 10, 8, 0, 0), 1), "10-07 10:00")
+
+    def _deadline_notice(self, created_at):
+        _, notice_id = Crawler(self.db, self.settings).save(SOURCES[0], self._detail(), False)
+        with self.db.transaction() as conn:
+            content_hash = conn.execute("SELECT content_hash FROM notices WHERE id=?", (notice_id,)).fetchone()[0]
+            conn.execute("UPDATE notices SET created_at=?,ai_status='completed' WHERE id=?", (iso_utc(created_at), notice_id))
+            conn.execute("INSERT INTO ai_analyses(notice_id,content_hash,result_json,model,created_at) VALUES(?,?,?,?,?)",
+                         (notice_id, content_hash, json.dumps(self._analysis()), "t", iso_utc()))
+            for kind, when in (("报名截止", datetime(2026, 10, 16, 15, 0, tzinfo=SEOUL)),
+                               ("活动时间", datetime(2026, 10, 16, 18, 0, tzinfo=SEOUL))):
+                conn.execute("""INSERT INTO deadlines(notice_id,kind,deadline_at,timezone,original_text,confidence)
+                                VALUES(?,?,?,'Asia/Seoul','10/16(금) 15:00까지',0.95)""", (notice_id, kind, iso_utc(when)))
+        return notice_id
+
+    def test_reminders_reach_current_subscribers_only(self):
+        early = self._active_subscriber()  # subscribed before the notice was published
+        late = self._active_subscriber(email="b@example.com")
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE subscribers SET verified_at=? WHERE id=?",
+                         (iso_utc(datetime(2026, 10, 9, 12, tzinfo=SEOUL)), late))
+        self._deadline_notice(datetime(2026, 10, 8, 9, tzinfo=SEOUL))
+        planner = ReminderPlanner(self.db, self.settings)
+
+        def run(*when):
+            planner.run(datetime(*when, tzinfo=SEOUL))
+            with self.db.connect() as conn:
+                return sorted(tuple(row) for row in conn.execute(
+                    "SELECT subscriber_id,notification_type FROM notification_deliveries WHERE notification_type LIKE 'deadline%'"))
+
+        self.assertEqual(run(2026, 10, 9, 10, 5), [(early, "deadline_d7")])  # late subscriber skips D-7/D-3
+        self.assertEqual(run(2026, 10, 9, 13, 0), [(early, "deadline_d7")])  # same round again: no duplicates
+        self.assertEqual(run(2026, 10, 13, 13, 0), [(early, "deadline_d7")])  # D-3 window missed (downtime): no catch-up
+        self.assertEqual(run(2026, 10, 15, 10, 5), [(early, "deadline_d1"), (early, "deadline_d7"), (late, "deadline_d1")])
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE subscribers SET status='unsubscribed' WHERE id=?", (late,))
+        self.assertEqual(run(2026, 10, 16, 10, 5)[-2:], [(early, "deadline_day"), (late, "deadline_d1")])
+        with self.db.connect() as conn:
+            kinds = {row[0] for row in conn.execute("SELECT DISTINCT payload_json FROM notification_deliveries")}
+        self.assertTrue(all('"deadline_id": 1' in kind for kind in kinds))  # the 活动时间 entry never triggers
+
+    def test_due_reminders_become_one_email_and_old_scheduled_ones_are_cancelled(self):
+        subscriber = self._active_subscriber()
+        notice_id = self._deadline_notice(datetime(2026, 10, 1, tzinfo=SEOUL))
+        now = iso_utc()
+        with self.db.transaction() as conn:
+            conn.execute("""INSERT INTO notification_deliveries(subscriber_id,notice_id,notification_type,dedupe_key,scheduled_at,
+                            status,payload_json,created_at) VALUES(?,?,'deadline_d3','deadline_d3:1:oldhash',?,'pending','{}',?)""",
+                         (subscriber, notice_id, now, now))
+            second = conn.execute("""INSERT INTO deadlines(notice_id,kind,deadline_at,timezone,original_text,confidence)
+                                     VALUES(?,'申请截止',?,'Asia/Seoul','10/16 17:00',0.9)""",
+                                  (notice_id, iso_utc(datetime(2026, 10, 16, 17, tzinfo=SEOUL)))).lastrowid
+            for deadline_id in (1, second):
+                conn.execute("""INSERT INTO notification_deliveries(subscriber_id,notice_id,notification_type,dedupe_key,
+                                scheduled_at,status,payload_json,created_at) VALUES(?,?,'deadline_d1',?,?,'pending',?,?)""",
+                             (subscriber, notice_id, f"deadline:{deadline_id}:1", now, json.dumps({"deadline_id": deadline_id}), now))
+        ReminderPlanner(self.db, self.settings).run(datetime(2026, 10, 7, 8, tzinfo=SEOUL))
+        mailer = FakeMailer()
+        DeliveryWorker(self.db, self.settings, mailer).process_due()
+        self.assertEqual(len(mailer.sent), 1)
+        _, subject, body, _ = mailer.sent[0]
+        self.assertIn("[截止提醒] 2 项即将截止", subject)
+        self.assertIn("报名截止", body)
+        self.assertIn("10月16日 15:00", body)
+        self.assertIn("/unsubscribe?token=", body)
+        with self.db.connect() as conn:
+            old = conn.execute("SELECT status,error FROM notification_deliveries WHERE dedupe_key='deadline_d3:1:oldhash'").fetchone()
+        self.assertEqual(tuple(old), ("cancelled", "replaced by scheduled reminders"))
 
 
 if __name__ == "__main__":

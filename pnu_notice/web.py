@@ -160,7 +160,7 @@ def preference_fields(settings: Settings, sources: set[str], immediate: bool, da
         f'{"checked" if source.key in sources else ""}><span>{html.escape(source.display_name)}</span></label>'
         for source in SOURCES)
     frequencies = (
-        ("immediate", immediate, "重要公告立即发送", "签证、奖学金、毕业等重要事项，以及截止日期提醒"),
+        ("immediate", immediate, "重要公告立即发送 + 截止提醒", "签证、奖学金、毕业等重要事项；申请、报名等截止前提醒"),
         ("daily", daily, f"普通公告在工作日 {'、'.join(f'{hour}:00' for hour in settings.digest_hours)} 汇总发送",
          "周一至周五每天最多几封，发布后通常 3 小时内收到；周末的公告合并到周一第一封"),
         ("weekly", weekly, f"低优先级公告每周{weekday} {settings.weekly_digest_hour}:00 汇总", "讲座、活动、宣传等信息"),
@@ -257,7 +257,7 @@ def home_page(view: View, deleted: bool = False, stats: dict | None = None) -> s
 
     <h2 class="section-title">为留学生设计</h2><p class="section-sub">读懂韩文公告，不再靠翻译软件逐句猜</p>
     <div class="cards4"><div class="feature">{icon("bolt")}<h3>重要事项即时提醒</h3><p>签证、奖学金、毕业、选课等公告分析完成后立即发送，周末也不例外。</p></div>
-    <div class="feature">{icon("clock")}<h3>截止日期提醒</h3><p>自动识别申请截止时间，在 D-7、D-3、D-1 和当天提醒你。</p></div>
+    <div class="feature">{icon("clock")}<h3>截止日期提醒</h3><p>申请、报名、提交等截止前 7 天、3 天、1 天和当天上午 {min(view.settings.digest_hours)}:00 提醒你。</p></div>
     <div class="feature">{icon("text")}<h3>准确的中文摘要</h3><p>说明这是什么、谁需要关注、要做什么，并保留原文日期和学校原公告链接。</p></div>
     <div class="feature">{icon("shield")}<h3>只收集邮箱</h3><p>不需要姓名、学号或手机号。每封邮件都能一键退订，也可以随时注销。</p></div></div>
 
@@ -666,7 +666,8 @@ class WebApp:
         elif account["password_hash"]:
             title, note = "修改密码", ""
         else:
-            title, note = "设置登录密码", '<p class="sub">设置后就可以随时用邮箱和密码登录，管理你的订阅。</p>'
+            title, note = "设置登录密码", ('<p class="sub">订阅已经生效。设置密码后，就可以随时用邮箱和密码登录，修改或退订。'
+                                         '设置之前不能修改订阅设置。</p>')
         current = ('<div class="field"><label>当前密码</label><input type="password" name="current_password" required '
                    'autocomplete="current-password"></div>' if account["password_hash"] else "")
         password_card = f"""<div class="card"><h2>{title}</h2>{note}
@@ -674,21 +675,20 @@ class WebApp:
         <button class="btn">保存密码</button></form></div>"""
         if account["must_change_password"]:
             return f'<h1>我的账户</h1><p class="sub">{html.escape(account["email"])}</p>{alert(message, error)}{password_card}'
+        if not account["password_hash"]:
+            # A password is required before the account can be managed; the subscription itself is already active.
+            return (f'<h1>最后一步：设置登录密码</h1><p class="sub">{html.escape(account["email"])}</p>'
+                    f'{alert(message, error)}{password_card}')
         if account["subscriber_id"]:
             subscriber, subscriptions = self.subscriptions.get(account["subscriber_id"])
             subscription = subscription_cards(view, subscriber, subscriptions, "/account", view.hidden_csrf(), False)
         else:
             subscription = ('<div class="card"><h2>订阅设置</h2><p class="sub">这个账户还没有订阅公告。</p>'
                             '<a class="btn" href="/subscribe">订阅公告</a></div>')
-        # A brand-new account sees the password prompt first; afterwards it sits below the subscription settings.
-        cards = password_card + subscription if not account["password_hash"] else subscription + password_card
+        cards = subscription + password_card
         if account["role"] != "admin":
-            if account["password_hash"]:
-                proof = ('<div class="field"><label>输入当前密码确认</label><input type="password" name="current_password" '
-                         'required autocomplete="current-password"></div>')
-            else:
-                proof = (f'<div class="field"><label>输入你的邮箱地址确认</label><input type="email" name="confirm_email" required '
-                         f'autocomplete="off" placeholder="{html.escape(account["email"])}"></div>')
+            proof = ('<div class="field"><label>输入当前密码确认</label><input type="password" name="current_password" '
+                     'required autocomplete="current-password"></div>')
             cards += ('<div class="card"><h2>注销账户</h2><p class="sub">永久删除你的邮箱、订阅设置、密码和所有发信记录，'
                       '之后不会再收到任何邮件。此操作<strong>无法恢复</strong>。只是暂时不想收邮件的话，可以用上面的“暂停订阅”。</p>') + f"""
             <form method="post" action="/account/delete">{view.hidden_csrf()}{proof}
@@ -699,10 +699,12 @@ class WebApp:
         path, method = request.path, request.method
         account = view.account
         if path == "/account" and method == "GET":
-            message = ("邮箱验证成功，订阅已启用。设置一个密码，以后就能直接登录。" if request.arg("welcome")
+            message = ("邮箱验证成功，订阅已经生效。请设置登录密码完成注册。" if request.arg("welcome")
                        else "密码已保存。" if request.arg("password") else "")
             welcome = steps(3) if request.arg("welcome") else ""
             return self._page(start_response, view, welcome + self._account_page(view, message), "我的订阅")
+        if path in ("/account", "/account/delete") and method == "POST" and not account["password_hash"]:
+            return self._redirect(start_response, "/account")  # password must be set first
         if path == "/account" and method == "POST" and account["subscriber_id"] and not account["must_change_password"]:
             action = request.field("action") or "save"
             try:
@@ -715,14 +717,8 @@ class WebApp:
             if account["role"] == "admin":
                 return self._page(start_response, view, self._account_page(view, "管理员账户不能注销。", True), "我的订阅",
                                   HTTPStatus.BAD_REQUEST)
-            # Proof of intent: the password, or for password-less accounts the full email address typed out.
-            if account["password_hash"]:
-                confirmed = check_password(request.field("current_password"), account["password_hash"])
+            if not check_password(request.field("current_password"), account["password_hash"]):
                 failure = "密码不正确，账户没有注销。"
-            else:
-                confirmed = request.field("confirm_email").strip().casefold() == account["email_normalized"]
-                failure = "输入的邮箱与账户不一致，账户没有注销。"
-            if not confirmed:
                 return self._page(start_response, view, self._account_page(view, failure, True), "我的订阅",
                                   HTTPStatus.BAD_REQUEST)
             self.accounts.delete_person(account_id=account["id"])

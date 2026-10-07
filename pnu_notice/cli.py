@@ -14,7 +14,7 @@ from .backup import create_backup
 from .config import Settings
 from .crawler import Crawler
 from .db import Database
-from .delivery import DeliveryPlanner, DeliveryWorker
+from .delivery import DeliveryPlanner, DeliveryWorker, ReminderPlanner
 from .emailer import ResendMailer
 from .monitoring import AlertWorker
 from .sources import SOURCES
@@ -101,10 +101,12 @@ def main(argv: list[str] | None = None) -> None:
         result = {"crawl": poll_sources(db, crawler)}
         result["ai"] = ai_worker.process_pending(100)
         result["planning"] = planner.plan_pending(200)
+        result["reminders"] = ReminderPlanner(db, settings).run()
         result["delivery"] = delivery_worker.process_due(500)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     elif args.command == "run-scheduler":
         alerts = AlertWorker(db, settings, mailer)
+        reminders = ReminderPlanner(db, settings)
         last_poll = None
         while True:
             if last_poll is None or time.monotonic() - last_poll >= settings.poll_interval_minutes * 60:
@@ -112,6 +114,7 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"{iso_utc()} crawl {json.dumps(poll_sources(db, crawler), ensure_ascii=False)}", flush=True)
             for name, step in (("ai", lambda: ai_worker.process_pending(50)),
                                ("planning", lambda: planner.plan_pending(100)),
+                               ("reminders", lambda: reminders.run()),
                                ("delivery", lambda: delivery_worker.process_due(200)),
                                ("alerts", alerts.alert_repeated_failures)):
                 try:

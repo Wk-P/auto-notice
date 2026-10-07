@@ -116,8 +116,13 @@ class AccountTests(unittest.TestCase):
         self.assertEqual((status, location), (303, "/account"))
         self.assertIn("我的订阅", self.client.get("/account")[1])
 
+    def _set_password(self, password="pnu-notice-2026"):
+        self.client.post("/account/password", {"csrf": self.client.csrf(), "new_password": password,
+                                               "confirm_password": password})
+
     def test_logged_in_user_updates_subscription(self):
         self._register()
+        self._set_password()
         self.client.post("/account", {"csrf": self.client.csrf(), "action": "save",
                                       "source": [SOURCES[1].key, SOURCES[2].key], "weekly": "on"})
         with self.db.connect() as conn:
@@ -328,14 +333,21 @@ class AccountTests(unittest.TestCase):
         self.assertIn("永久删除", self.client.get("/?deleted=1")[1])
         self._register("gone@example.com")  # the address can subscribe again from scratch
 
-    def test_passwordless_user_confirms_deletion_by_typing_email(self):
-        self._register("typed@example.com")
-        status, _, _ = self.client.post("/account/delete", {"csrf": self.client.csrf(), "confirm_email": "other@example.com"})
-        self.assertEqual(status, 400)
-        status, _, location = self.client.post("/account/delete", {"csrf": self.client.csrf(),
-                                                                   "confirm_email": " Typed@Example.com "})
-        self.assertEqual(location, "/?deleted=1")
-        self.assertEqual(self._person_rows("typed@example.com")["subscribers"], 0)
+    def test_password_is_required_before_the_account_can_be_managed(self):
+        self._register("new@example.com")
+        status, page, _ = self.client.get("/account?welcome=1")
+        self.assertIn("最后一步：设置登录密码", page)
+        self.assertNotIn("<h2>订阅设置", page)  # nothing else until a password exists
+        self.assertNotIn("永久注销", page)
+        csrf = self.client.csrf()
+        self.assertEqual(self.client.post("/account", {"csrf": csrf, "action": "unsubscribe"})[2], "/account")
+        self.assertEqual(self.client.post("/account/delete", {"csrf": csrf})[2], "/account")
+        with self.db.connect() as conn:  # the subscription itself is active right after verification
+            self.assertEqual(conn.execute("SELECT status FROM subscribers").fetchone()[0], "active")
+        self._set_password()
+        page = self.client.get("/account")[1]
+        self.assertIn("<h2>订阅设置", page)
+        self.assertIn("永久注销", page)
 
     def test_admin_deletes_subscriber_but_never_an_admin(self):
         self._register("victim@example.com")

@@ -63,6 +63,44 @@ def _seoul_time(value: str | None) -> str:
     return datetime.fromisoformat(value).astimezone(SEOUL).strftime("%Y-%m-%d %H:%M")
 
 
+def _time_left(deadline_at: str) -> tuple[str, str]:
+    """('今天截止', '10月8日 15:00')-style wording, from the real date difference in Seoul."""
+    local = datetime.fromisoformat(deadline_at).astimezone(SEOUL)
+    days = (local.date() - datetime.now(SEOUL).date()).days
+    date_only = (local.hour, local.minute, local.second) == (0, 0, 0)  # "until that date": no misleading 00:00
+    when = f"{local.month}月{local.day}日" + ("" if date_only else f" {local:%H:%M}")
+    label = "今天截止" if days <= 0 else "明天截止" if days == 1 else f"还剩 {days} 天"
+    return label, when
+
+
+def reminder_email(settings: Settings, subscriber: dict, entries: list[tuple]) -> tuple[str, str]:
+    """One email for every reminder due to this subscriber in the current round; entries are
+    (notice, analysis, deadline) tuples, soonest deadline first."""
+    entries = sorted(entries, key=lambda entry: entry[2]["deadline_at"])
+    cards = []
+    for notice, analysis, deadline in entries:
+        label, when = _time_left(deadline["deadline_at"])
+        source = SOURCE_BY_KEY.get(notice["source_key"])
+        source_name = source.display_name if source else notice["source_name"]
+        actions = "".join(f"<li>{html.escape(item)}</li>" for item in analysis.get("actions", [])[:3])
+        cards.append(f"""<section style="border:1px solid #f2d4a8;background:#fffaf2;border-radius:12px;padding:16px 18px;margin:14px 0">
+        <p style="margin:0 0 6px"><span style="background:#b54708;color:#fff;border-radius:999px;padding:2px 10px;font-size:13px;font-weight:bold">{label}</span>
+        <strong style="margin-left:8px">{html.escape(deadline["kind"])}</strong>：{html.escape(when)}</p>
+        <h2 style="font-size:17px;margin:10px 0 6px"><a href="{html.escape(notice['original_url'])}">{html.escape(analysis.get('title_zh') or notice['original_title'])}</a></h2>
+        <p style="margin:0;color:#667085;font-size:14px">来源：{html.escape(source_name)} · 原文：{html.escape(deadline["original_text"])}</p>
+        {f'<ul style="margin:8px 0 0;padding-left:20px">{actions}</ul>' if actions else ""}
+        <p style="margin:10px 0 0"><a href="{html.escape(notice['original_url'])}">查看学校原公告</a></p></section>""")
+    first_label, _ = _time_left(entries[0][2]["deadline_at"])
+    first_title = entries[0][1].get("title_zh") or entries[0][0]["original_title"]
+    subject = (f"[截止提醒] {first_label}：{first_title}" if len(entries) == 1
+               else f"[截止提醒] {len(entries)} 项即将截止，最近的{first_label}")
+    body = (f"<main style='font-family:Arial,sans-serif;max-width:680px;margin:auto;line-height:1.6'>"
+            f"<p style='color:#174b9b;font-weight:bold'>PNU Notice · 截止提醒</p>"
+            f"<h1 style='font-size:22px'>{'这项' if len(entries) == 1 else f'这 {len(entries)} 项'}申请 / 提交快到截止时间了</h1>"
+            + "".join(cards) + footer(settings, subscriber) + "</main>")
+    return subject, body
+
+
 def welcome_email(settings: Settings, subscriber: dict, subscriptions: list[dict]) -> tuple[str, str]:
     enabled = [SOURCE_BY_KEY[item["source_key"]].display_name for item in subscriptions
                if item["enabled"] and item["source_key"] in SOURCE_BY_KEY]
@@ -73,7 +111,9 @@ def welcome_email(settings: Settings, subscriber: dict, subscriptions: list[dict
     weekday = "一二三四五六日"[settings.weekly_digest_weekday]
     plan = []
     if immediate:
-        plan.append(("重要公告", "签证、奖学金、毕业等重要事项，分析完成后立即发送；有截止日期的还会在 D-7、D-3、D-1 和当天提醒。"))
+        plan.append(("重要公告", "签证、奖学金、毕业等重要事项，分析完成后立即发送。"))
+        plan.append(("截止提醒", f"申请、报名、提交等截止日期前 7 天、3 天、1 天和当天上午 {min(settings.digest_hours)}:00 提醒"
+                                "（订阅之前已发布的公告只提醒前 1 天和当天）。"))
     if daily:
         plan.append(("普通公告", f"工作日 {hours}（首尔时间）合并成一封汇总，发布后通常 3 小时内收到。"))
     if weekly:
