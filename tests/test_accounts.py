@@ -439,6 +439,74 @@ class AccountTests(unittest.TestCase):
                 "attachment_requires_review": False, "confidence": 0.9}
 
 
+    def test_password_reset_email_limited_to_two_per_day(self):
+        from unittest import mock
+        from datetime import timedelta
+        import pnu_notice.accounts as accounts_module
+        self._register("limit@example.com")
+        sent_before = len(self.mailer.sent)
+        start = accounts_module.now_utc()
+        for minutes in (0, 6, 12):  # three requests, each past the 5-minute cooldown, on the same Seoul day
+            with mock.patch.object(accounts_module, "now_utc", return_value=start + timedelta(minutes=minutes)):
+                self.accounts.request_password_reset("limit@example.com")
+        reset_mails = [m for m in self.mailer.sent[sent_before:] if "密码" in m[1]]
+        self.assertEqual(len(reset_mails), 2)
+        status, page, _ = self.client.post("/forgot-password", {"email": "limit@example.com"})
+        self.assertIn("已提交", page)  # same response as for an unknown address
+        self.assertIn("每天最多 2 次", page)
+
+
+    def test_reaching_reset_limit_does_not_affect_subscription(self):
+        from unittest import mock
+        from datetime import timedelta
+        from pnu_notice.crawler import Crawler, NoticeDetail
+        from pnu_notice.delivery import DeliveryWorker
+        from pnu_notice.timeutil import SEOUL
+        import pnu_notice.accounts as accounts_module
+        from datetime import datetime
+        self.client.post("/subscribe", {"email": "busy@example.com", "source": [SOURCES[0].key], "immediate": "on",
+                                         "daily": "on"})
+        self.client.get(f"/verify?token={self.mailer.last_link('/verify')}")
+        start = accounts_module.now_utc()
+        for minutes in (0, 6, 12):
+            with mock.patch.object(accounts_module, "now_utc", return_value=start + timedelta(minutes=minutes)):
+                self.accounts.request_password_reset("busy@example.com")
+        with self.db.connect() as conn:
+            subscriber_id, status = conn.execute(
+                "SELECT id,status FROM subscribers WHERE email_normalized='busy@example.com'").fetchone()
+        self.assertEqual(status, "active")
+        # A notice email still goes out.
+        detail = NoticeDetail("9", "공지", "https://cse.pusan.ac.kr/bbs/cse/2055/9/artclView.do", "a",
+                              datetime(2026, 10, 7, tzinfo=SEOUL), "일반", "<p>x</p>", "본문", [])
+        _, notice_id = Crawler(self.db, self.settings).save(SOURCES[0], detail, True)
+        with self.db.transaction() as conn:
+            content_hash = conn.execute("SELECT content_hash FROM notices").fetchone()[0]
+            conn.execute("INSERT INTO ai_analyses(notice_id,content_hash,result_json,model,created_at) VALUES(?,?,?,?,?)",
+                         (notice_id, content_hash, json.dumps(self._analysis_dict()), "t", iso_utc()))
+        from pnu_notice import admin
+        admin.queue_test_email(self.db, notice_id, subscriber_id)
+        before = len(self.mailer.sent)
+        DeliveryWorker(self.db, self.settings, self.mailer).process_due()
+        self.assertEqual([m[0] for m in self.mailer.sent[before:]], ["busy@example.com"])
+        # Managing and unsubscribing from the email link still work.
+        token = re.search(r"/subscription/manage\?token=([^'\"&]+)", self.mailer.sent[-1][2]).group(1)
+        outsider = Client(self.client.app)
+        outsider.post("/subscription/manage", {"token": token, "action": "save", "source": [SOURCES[1].key], "daily": "on"})
+        outsider.post("/subscription/manage", {"token": token, "action": "unsubscribe"})
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM subscribers WHERE id=?", (subscriber_id,)).fetchone()[0],
+                             "unsubscribed")
+        # Subscribing again (after the separate 5-minute confirmation cooldown) sends confirmation and welcome emails.
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE notification_deliveries SET created_at=? WHERE notification_type='verification'",
+                         (iso_utc(start - timedelta(minutes=10)),))
+        before = len(self.mailer.sent)
+        Client(self.client.app).post("/subscribe", {"email": "busy@example.com", "source": [SOURCES[0].key], "daily": "on"})
+        self.client.get(f"/verify?token={self.mailer.last_link('/verify')}")
+        self.assertEqual([m[1] for m in self.mailer.sent[before:]],
+                         ["还差一步：确认你的 PNU Notice 订阅", "欢迎订阅 PNU Notice"])
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -374,7 +374,7 @@ def forgot_page(message: str = "", error: bool = False, email: str = "") -> str:
     <div class="card"><form method="post" action="/forgot-password">
     <div class="field"><label>邮箱地址</label><input type="email" name="email" required autocomplete="email" value="{html.escape(email)}"></div>
     <button class="btn">发送链接</button></form>
-    <p class="hint" style="margin-top:18px">没收到邮件：请检查垃圾邮件箱；每 5 分钟最多发送一次；只有点过确认链接的订阅邮箱才能设置密码。<br>
+    <p class="hint" style="margin-top:18px">没收到邮件：请检查垃圾邮件箱；每个邮箱每 5 分钟最多发送一次，每天最多 2 次；只有点过确认链接的订阅邮箱才能设置密码。<br>
     管理员账户出于安全原因不能通过邮件重置，请在服务器上执行 <code>pnu-notice set-admin-password</code>。</p></div>"""
 
 

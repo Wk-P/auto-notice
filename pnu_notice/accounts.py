@@ -20,6 +20,7 @@ USER_SESSION_TTL = timedelta(days=30)
 ADMIN_SESSION_TTL = timedelta(hours=12)
 RESET_TTL = timedelta(hours=1)
 RESET_COOLDOWN = timedelta(minutes=5)
+RESET_DAILY_LIMIT = 2  # reset emails per address per Seoul calendar day
 WEAK_PASSWORDS = {"12345678", "123456789", "1234567890", "password", "password1", "qwertyui", "11111111", "00000000"}
 
 
@@ -180,7 +181,11 @@ class AccountService:
                    AND status!='email_invalid'""", (normalized,)).fetchone()
             recent = conn.execute("SELECT 1 FROM password_resets WHERE email_normalized=? AND created_at>?",
                                   (normalized, iso_utc(now - RESET_COOLDOWN))).fetchone()
-        if (account and account["role"] == "admin") or subscriber is None or recent:
+            today = datetime.combine(now.astimezone(SEOUL).date(), datetime.min.time(), SEOUL)
+            sent_today = conn.execute("SELECT COUNT(*) FROM password_resets WHERE email_normalized=? AND created_at>=?",
+                                      (normalized, iso_utc(today))).fetchone()[0]
+        # Over the limit looks exactly like an unknown address, so the response never reveals which emails exist.
+        if (account and account["role"] == "admin") or subscriber is None or recent or sent_today >= RESET_DAILY_LIMIT:
             return
         token = random_token()
         with self.db.transaction() as conn:
