@@ -123,7 +123,14 @@ def main(argv: list[str] | None = None) -> None:
                     print(f"{iso_utc()} {name} failed: {exc}", flush=True)
             time.sleep(60)
     elif args.command == "backup":
-        target = create_backup(db, args.directory, args.retention_days)
+        try:
+            target = create_backup(db, args.directory, args.retention_days)
+        except Exception as exc:
+            # Recorded so repeated failures reach the administrator alert, not just the container log.
+            with db.transaction() as conn:
+                conn.execute("INSERT INTO job_failures(component,source_key,error_message,occurred_at) VALUES(?,?,?,?)",
+                             ("backup", None, str(exc)[:2000], iso_utc()))
+            raise
         print(f"Backup created at {target}")
     elif args.command == "set-admin-password":
         password = getpass.getpass("新密码: ") if sys.stdin.isatty() else sys.stdin.read().strip()

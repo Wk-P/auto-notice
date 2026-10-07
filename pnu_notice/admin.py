@@ -29,7 +29,8 @@ DELIVERY_TYPES = {"new_notice": "即时：新公告", "updated_notice": "即时�
 DELIVERY_STATUS = {"pending": "待发送", "sending": "发送中", "sent": "已发送", "retrying": "重试中", "failed": "失败",
                    "cancelled": "已取消"}
 COMPONENTS = {"crawler": "抓取", "crawler_detail": "抓取详情页", "ai": "AI 分析", "ai_quota": "AI 余额不足",
-              "delivery_planner": "发信规划", "welcome_email": "欢迎邮件", "account_email": "账户通知邮件"}
+              "delivery_planner": "发信规划", "welcome_email": "欢迎邮件", "account_email": "账户通知邮件",
+              "backup": "数据库备份"}
 
 # Served as a file because the CSP forbids inline scripts: asks before destructive admin actions.
 ADMIN_JS = """document.addEventListener('submit', function (event) {

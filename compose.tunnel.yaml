@@ -48,6 +48,9 @@ services:
     build: .
     env_file: .env
     command: ["sh", "-c", "while true; do pnu-notice backup --directory /app/backups --retention-days 14; sleep 86400; done"]
+    # Root (to read the database volume) with the deploying user's group, which owns ./backups; with every
+    # capability dropped, root can only write there through those group permissions.
+    user: "0:${HOST_GID:?Set HOST_GID in .env}"
     cpus: 0.25
     mem_limit: 128m
     volumes:
