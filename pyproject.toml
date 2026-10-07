@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pnu-notice"
+version = "0.1.0"
+description = "PNU notice monitor, AI analysis, and email subscriptions"
+requires-python = ">=3.11"
+dependencies = ["beautifulsoup4>=4.12,<5", "gunicorn>=23,<24"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[project.scripts]
+pnu-notice = "pnu_notice.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pnu_notice*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

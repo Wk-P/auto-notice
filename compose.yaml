@@ -1,0 +1,18 @@
+services:
+  web:
+    build: .
+    env_file: .env
+    command: ["pnu-notice", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./var:/app/var
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    env_file: .env
+    command: ["pnu-notice", "run-scheduler"]
+    volumes:
+      - ./var:/app/var
+    restart: unless-stopped

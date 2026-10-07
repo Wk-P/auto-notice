@@ -1,0 +1,16 @@
+{$DOMAIN} {
+    encode zstd gzip
+
+    request_body {
+        max_size 64KB
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Frame-Options "DENY"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    reverse_proxy web:8000
+}

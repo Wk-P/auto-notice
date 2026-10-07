@@ -1,0 +1,79 @@
+name: pnu-notice
+
+# For a host without a public IP: Cloudflare Tunnel replaces Caddy and terminates HTTPS at Cloudflare.
+# This project runs its own tunnel and publishes no host ports, so it cannot collide with other services
+# on a shared machine. Resource limits keep it from competing with other workloads.
+services:
+  web:
+    build: .
+    env_file: .env
+    command: ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "60", "--access-logfile", "-", "pnu_notice.web:create_app()"]
+    expose:
+      - "8000"
+    cpus: 1.0
+    mem_limit: 512m
+    volumes:
+      - pnu_data:/app/var
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).read()"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    env_file: .env
+    command: ["pnu-notice", "run-scheduler"]
+    cpus: 1.0
+    mem_limit: 512m
+    volumes:
+      - pnu_data:/app/var
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  backup:
+    build: .
+    env_file: .env
+    command: ["sh", "-c", "while true; do pnu-notice backup --directory /app/backups --retention-days 14; sleep 86400; done"]
+    cpus: 0.25
+    mem_limit: 128m
+    volumes:
+      - pnu_data:/app/var
+      - ./backups:/app/backups
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    # Runs as the deploying user so it can read the 0600 tunnel credentials in ./cloudflared.
+    user: "${HOST_UID:?Set HOST_UID in .env}:${HOST_GID:?Set HOST_GID in .env}"
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    cpus: 0.5
+    mem_limit: 128m
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pnu_data:
