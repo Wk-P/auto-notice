@@ -39,7 +39,7 @@ box-shadow:0 30px 60px -20px #0a2a5780;position:relative;overflow:hidden}
 .home-hero:before{content:"";position:absolute;inset:0;background-image:linear-gradient(#ffffff0d 1px,transparent 1px),linear-gradient(90deg,#ffffff0d 1px,transparent 1px);background-size:36px 36px;mask-image:linear-gradient(180deg,#000,transparent 85%);-webkit-mask-image:linear-gradient(180deg,#000,transparent 85%)}
 .home-hero>*{position:relative}.eyebrow{display:inline-flex;gap:8px;align-items:center;padding:6px 12px;border-radius:999px;background:#ffffff1a;border:1px solid #ffffff2e;font-size:13px;color:#dbe8ff;margin-bottom:20px}
 .home-hero h1{font-size:clamp(34px,5vw,56px);line-height:1.08;letter-spacing:-.02em;margin:0 0 18px}.home-hero h1 em{font-style:normal;color:#ffcf4a}
-.live{display:flex;align-items:center;gap:8px;margin-top:22px;font-size:14px;color:#b9cdf0}.pulse{width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px #34d39933}
+.live{display:flex;align-items:flex-start;gap:8px;line-height:1.5;margin-top:22px;font-size:14px;color:#b9cdf0}.pulse{flex:none;margin-top:6px;width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px #34d39933}
 .mail{background:#fff;color:#17213b;border-radius:18px;padding:20px 22px;box-shadow:0 24px 50px -12px #00000059;transform:rotate(1.5deg)}
 .mail .from{display:flex;gap:10px;align-items:center;font-size:13px;color:#667085;border-bottom:1px solid #eef1f6;padding-bottom:12px;margin-bottom:12px}
 .mail h3{font-size:16px;margin:0 0 8px;line-height:1.4}.mail p{font-size:13px;color:#475467;line-height:1.7;margin:0 0 10px}.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:#fff1e0;color:#b54708;margin-right:6px}
@@ -53,7 +53,7 @@ box-shadow:0 30px 60px -20px #0a2a5780;position:relative;overflow:hidden}
 .num{font-size:13px;font-weight:800;color:#174b9b;letter-spacing:.08em;margin-bottom:10px}
 .cta{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding:36px 40px;border-radius:24px;background:linear-gradient(135deg,#fff6d6,#ffe8a3);margin-bottom:24px}.cta h2{margin:0 0 6px;font-size:24px}.cta p{margin:0;color:#6e4b00}
 .site-footer{background:#0a1f40;color:#9fb3d6;margin-top:64px;padding:48px 6vw 28px;font-size:14px}.footer-inner{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:32px}
-.site-footer h4{color:#fff;font-size:14px;margin:0 0 12px}.site-footer a{color:#c9d6ee;text-decoration:none;display:block;margin:7px 0}.site-footer a:hover{color:#fff}
+.site-footer h4{color:#fff;font-size:14px;margin:0 0 12px}.site-footer a{color:#c9d6ee;text-decoration:none;display:block;margin:7px 0}.site-footer a:hover{color:#fff}.site-footer a.inline-link{display:inline;margin:0;color:#c9d6ee}
 .site-footer .about{line-height:1.7;margin:12px 0 0;max-width:320px}.footer-brand{display:flex;gap:10px;align-items:center;color:#fff;font-weight:800;font-size:18px}
 .copyright{max-width:1180px;margin:36px auto 0;padding-top:20px;border-top:1px solid #ffffff1a;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:#7f93b8}
 @media(max-width:860px){.home-hero{grid-template-columns:1fr;padding:32px 24px}.mail{transform:none}.strip,.cards4{grid-template-columns:repeat(2,minmax(0,1fr))}.cards3{grid-template-columns:1fr}
@@ -97,8 +97,22 @@ LOGO = ('<svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rec
         '<path d="M13.6 23.4a2.5 2.5 0 0 0 4.8 0" stroke="#ffcf4a" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>')
 
 
+DEVELOPER = "Wk-P"
+DEVELOPER_URL = "https://github.com/Wk-P"
+# Set REPO_PUBLIC to False if the repository is made private again, so visitors do not land on a 404.
+REPO_URL = "https://github.com/Wk-P/auto-notice"
+REPO_PUBLIC = True
+GITHUB_ICON = ('<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor" style="vertical-align:-2px">'
+               '<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49'
+               '-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87'
+               '.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27'
+               '.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25'
+               '.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>')
+
+
 def site_footer() -> str:
     year = datetime.now(SEOUL).year
+    repo = f'<a href="{REPO_URL}" target="_blank" rel="noopener">{GITHUB_ICON} 源代码</a>' if REPO_PUBLIC else ""
     sources = "".join(f'<a href="{html.escape(source.page_url)}" target="_blank" rel="noopener">{html.escape(source.display_name)} ↗</a>'
                       for source in SOURCES)
     return f"""<footer class="site-footer"><div class="footer-inner">
@@ -106,8 +120,9 @@ def site_footer() -> str:
     <p class="about">自动整理釜山大学计算机学部和国际处的官方公告，生成中文摘要，在重要更新和截止日期之前发到你的邮箱。</p></div>
     <div><h4>服务</h4><a href="/subscribe">订阅公告</a><a href="/login">登录</a><a href="/account">管理我的订阅</a><a href="/forgot-password">设置密码</a></div>
     <div><h4>官方公告来源</h4>{sources}</div>
-    <div><h4>说明</h4><a href="/privacy">隐私与账户说明</a><a href="/privacy">退订与注销</a></div></div>
-    <div class="copyright"><span>© {year} PNU Notice. All rights reserved.</span>
+    <div><h4>关于</h4><a href="/privacy">隐私与账户说明</a><a href="/privacy">退订与注销</a>
+    <a href="{DEVELOPER_URL}" target="_blank" rel="noopener">{GITHUB_ICON} 开发者 {DEVELOPER}</a>{repo}</div></div>
+    <div class="copyright"><span>© {year} PNU Notice · Developed by <a class="inline-link" href="{DEVELOPER_URL}" target="_blank" rel="noopener">{DEVELOPER}</a>. All rights reserved.</span>
     <span>学生独立项目，与釜山大学官方无关 · 摘要由 AI 生成，请以学校原公告为准</span></div></footer>"""
 
 
@@ -202,7 +217,8 @@ def home_page(view: View, deleted: bool = False, stats: dict | None = None) -> s
     live = ""
     if stats.get("notices"):
         checked = f' · 最近一次检查 {stats["checked"]}' if stats.get("checked") else ""
-        live = f'<div class="live"><span class="pulse"></span>已收录 {stats["notices"]} 条官方公告{checked}</div>'
+        # One text span, so the relative time wraps with the sentence instead of becoming its own flex column.
+        live = f'<div class="live"><span class="pulse"></span><span>已收录 {stats["notices"]} 条官方公告{checked}</span></div>'
     hours = "、".join(f"{hour}:00" for hour in view.settings.digest_hours)
     return notice + f"""<section class="home-hero"><div>
     <span class="eyebrow">釜山大学 · 计算机学部 &amp; 国际处</span>
@@ -359,7 +375,7 @@ def message_page(title: str, text: str) -> str:
 PRIVACY = """<h1>隐私与账户说明</h1><div class="card">
 <h2>我们保存什么</h2><ul class="muted">
 <li>邮箱地址，以及你选择的公告来源和接收方式。</li>
-<li>如果你设置了密码：密码经过加盐的 scrypt 单向加密后保存，任何人（包括管理员）都看不到原密码。</li>
+<li>如果你设置了密码：我们不保存密码本身，只保存它经过加盐的 scrypt 哈希值。哈希是单向计算，无法还原成原密码，所以任何人（包括管理员和开发者）都看不到你的密码。忘记密码时只能重新设置，没人能帮你“找回”原密码。</li>
 <li>登录状态（30 天有效，退出或修改密码后失效）和发信记录，用于防止重复发送和排查问题。</li></ul>
 <p class="muted">我们不收集姓名、学号、手机号、国籍等信息，也不会把你的邮箱提供给任何第三方用于营销。邮件通过 Resend 发送，网站经由 Cloudflare 提供访问。</p>
 <h2>订阅与登录</h2><ul class="muted">

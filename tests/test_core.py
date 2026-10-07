@@ -397,5 +397,17 @@ class PnuNoticeTests(unittest.TestCase):
         self.assertEqual(result["deadlines"][0]["original_text"], "10월 중순")
 
 
+    def test_notice_email_shows_seoul_time_and_readable_audience(self):
+        from pnu_notice.emailer import notice_email
+        subscriber = {"id": 1, "email": "a@example.com", "management_token_created_at": iso_utc()}
+        notice = {"original_title": "t", "original_url": "https://example.test", "source_key": SOURCES[0].key,
+                  "source_name": "x", "published_at": "2026-10-07T07:18:50.950000+00:00"}
+        analysis = {**self._analysis(), "audience": ["undergraduate", "graduating_student"]}
+        _, body = notice_email(self.settings, subscriber, notice, analysis, "new_notice")
+        self.assertIn("2026-10-07 16:18", body)
+        self.assertIn("本科生、应届毕业生", body)
+        self.assertNotIn("graduating_student", body)
+
+
 if __name__ == "__main__":
     unittest.main()

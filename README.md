@@ -1,5 +1,22 @@
 # PNU Notice
 
+**线上地址：<https://pnu.knettf.com>**
+
+自动整理釜山大学计算机学部和国际处的官方公告，生成中文摘要，通过邮件提醒：重要公告立即发送，普通公告工作日 10:00、13:00、16:00、19:00 汇总，截止日期前还会提醒。
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/images/home-mobile.jpg" alt="pnu.knettf.com 首页（手机）" width="240"></td>
+    <td align="center"><img src="docs/images/email-important.jpg" alt="重要公告即时邮件" width="240"></td>
+    <td align="center"><img src="docs/images/email-digest.jpg" alt="定时汇总邮件" width="240"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>pnu.knettf.com 首页（手机）</sub></td>
+    <td align="center"><sub>重要公告：发布后立即发送</sub></td>
+    <td align="center"><sub>普通公告：工作日定时汇总</sub></td>
+  </tr>
+</table>
+
 面向釜山大学学生的公告抓取、AI 中文分析和邮件订阅服务。第一阶段严格限定为三个官方来源：计算机本科生公告、计算机大学院公告、国际处留学生公告。
 
 系统将抓取、AI 分析和邮件发送拆成可恢复的独立步骤。公告详情及原始 HTML 会先写入 SQLite；OpenAI 或 Resend 暂时不可用时，官方内容不会丢失。所有通知都有数据库唯一键和 Resend 幂等键。
@@ -95,4 +112,4 @@ OpenAI Structured Outputs 的实现遵循[官方文档](https://developers.opena
   ```
 
   这条命令也用于创建管理员。设置后下次登录必须先修改密码。
-- 密码用加盐 scrypt 保存；连续 5 次输错锁定 15 分钟；会话 Cookie 为 HttpOnly + Secure + SameSite=Lax，登录后的所有表单带 CSRF 校验。
+- 只保存密码的加盐 scrypt 哈希值（单向，不可还原），不保存密码本身；连续 5 次输错锁定 15 分钟；会话 Cookie 为 HttpOnly + Secure + SameSite=Lax，登录后的所有表单带 CSRF 校验。

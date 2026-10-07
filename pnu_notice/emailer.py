@@ -51,6 +51,18 @@ def footer(settings: Settings, subscriber: dict) -> str:
             f"<a href='{html.escape(unsubscribe)}'>退订</a></p>")
 
 
+AUDIENCE_LABELS = {"undergraduate": "本科生", "master": "硕士生", "phd": "博士生", "graduate": "研究生",
+                   "international_student": "留学生", "prospective_student": "新生 / 准入学生",
+                   "graduating_student": "应届毕业生", "chinese_student": "中国留学生",
+                   "specific_nationality": "特定国籍学生", "all_students": "全体学生"}
+
+
+def _seoul_time(value: str | None) -> str:
+    if not value:
+        return "未明确"
+    return datetime.fromisoformat(value).astimezone(SEOUL).strftime("%Y-%m-%d %H:%M")
+
+
 def welcome_email(settings: Settings, subscriber: dict, subscriptions: list[dict]) -> tuple[str, str]:
     enabled = [SOURCE_BY_KEY[item["source_key"]].display_name for item in subscriptions
                if item["enabled"] and item["source_key"] in SOURCE_BY_KEY]
@@ -97,12 +109,12 @@ def notice_email(settings: Settings, subscriber: dict, notice: dict, analysis: d
     subject = f"{prefix} {analysis['title_zh'] or notice['original_title']}"
     source_name = SOURCE_BY_KEY.get(notice["source_key"])
     source_name = source_name.display_name if source_name else notice["source_name"]
-    audience = "、".join(analysis["audience"]) or "以原公告为准"
+    audience = "、".join(AUDIENCE_LABELS.get(item, item) for item in analysis["audience"]) or "以原公告为准"
     body = f"""<main style="font-family:Arial,sans-serif;max-width:680px;margin:auto;line-height:1.65">
     <p style="color:#0b5cab;font-weight:bold">PNU Notice · 重要度：{importance}</p>
     <h1 style="font-size:24px">{html.escape(analysis['title_zh'] or notice['original_title'])}</h1>
     <p><strong>来源：</strong>{html.escape(source_name)}<br>
-    <strong>发布时间：</strong>{html.escape(notice['published_at'] or '未明确')}<br>
+    <strong>发布时间：</strong>{html.escape(_seoul_time(notice['published_at']))}<br>
     <strong>截止：</strong>{html.escape('；'.join(deadlines) if deadlines else '未明确')}<br>
     <strong>适合人群：</strong>{html.escape(audience)}</p>
     <h2>中文摘要</h2><p>{html.escape(analysis['summary_zh'])}</p>
