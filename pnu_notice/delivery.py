@@ -169,13 +169,13 @@ class DeliveryWorker:
             conn.execute("""UPDATE notification_deliveries SET status='retrying',next_attempt_at=?,
                             error='recovered after interrupted send worker'
                             WHERE status='sending' AND scheduled_at<?
-                            AND notification_type NOT IN ('verification','subscription_management')""",
+                            AND notification_type NOT IN ('verification','welcome','subscription_management')""",
                          (now, stale_cutoff))
         with self.db.connect() as conn:
             due = conn.execute(
                 """SELECT * FROM notification_deliveries WHERE status IN ('pending','retrying')
                    AND scheduled_at<=? AND (next_attempt_at IS NULL OR next_attempt_at<=?)
-                   AND notification_type NOT IN ('verification','subscription_management')
+                   AND notification_type NOT IN ('verification','welcome','subscription_management')
                    ORDER BY scheduled_at LIMIT ?""", (now, now, limit),
             ).fetchall()
         digest_groups: dict[tuple[int, str], list] = defaultdict(list)

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from .config import Settings
 from .db import Database
-from .emailer import ResendMailer
+from .emailer import ResendMailer, welcome_email
 from .security import management_token, random_token, token_hash
 from .sources import SOURCE_BY_KEY
 from .timeutil import iso_utc, now_utc
@@ -125,6 +125,7 @@ class SubscriptionService:
                 raise ValueError("验证链接无效、已使用或已过期。")
             subscriber_id = verification["subscriber_id"]
             subscriber = conn.execute("SELECT * FROM subscribers WHERE id=?", (subscriber_id,)).fetchone()
+            newly_active = subscriber["status"] != "active"
             # Keep an existing management link working so links in earlier emails stay valid.
             created = subscriber["management_token_created_at"] or now
             raw_management = management_token(subscriber_id, created, self.settings.app_secret)
@@ -143,7 +144,33 @@ class SubscriptionService:
                     [(subscriber_id, key, int(preferences["immediate"]), int(preferences["daily"]),
                       int(preferences["weekly"]), now, now) for key in preferences["sources"] if key in SOURCE_BY_KEY],
                 )
-            return raw_management
+        if newly_active:
+            self.send_welcome(subscriber_id, now)
+        return raw_management
+
+    def send_welcome(self, subscriber_id: int, verified_at: str) -> None:
+        """Welcome email on first activation (or re-activation). A failure is logged and never undoes the subscription."""
+        subscriber, subscriptions = self.get(subscriber_id)
+        now = iso_utc()
+        with self.db.transaction() as conn:
+            delivery_id = conn.execute(
+                """INSERT OR IGNORE INTO notification_deliveries(subscriber_id,notification_type,dedupe_key,scheduled_at,
+                   status,created_at) VALUES(?,'welcome',?,?,'sending',?)""",
+                (subscriber_id, f"welcome:{verified_at}", now, now)).lastrowid
+        if not delivery_id:
+            return
+        subject, body = welcome_email(self.settings, subscriber, subscriptions)
+        try:
+            provider_id = self.mailer.send(subscriber["email"], subject, body, f"welcome-{subscriber_id}-{verified_at}"[:250])
+            with self.db.transaction() as conn:
+                conn.execute("UPDATE notification_deliveries SET status='sent',sent_at=?,provider_message_id=? WHERE id=?",
+                             (iso_utc(), provider_id, delivery_id))
+        except Exception as exc:
+            with self.db.transaction() as conn:
+                conn.execute("UPDATE notification_deliveries SET status='failed',error=?,attempts=1 WHERE id=?",
+                             (str(exc)[:2000], delivery_id))
+                conn.execute("INSERT INTO job_failures(component,source_key,error_message,occurred_at) VALUES(?,?,?,?)",
+                             ("welcome_email", None, str(exc)[:2000], iso_utc()))
 
     def get_by_management_token(self, token: str):
         digest = token_hash(token, self.settings.app_secret)

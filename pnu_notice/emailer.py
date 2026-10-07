@@ -51,6 +51,40 @@ def footer(settings: Settings, subscriber: dict) -> str:
             f"<a href='{html.escape(unsubscribe)}'>退订</a></p>")
 
 
+def welcome_email(settings: Settings, subscriber: dict, subscriptions: list[dict]) -> tuple[str, str]:
+    enabled = [SOURCE_BY_KEY[item["source_key"]].display_name for item in subscriptions
+               if item["enabled"] and item["source_key"] in SOURCE_BY_KEY]
+    immediate = any(item["immediate_enabled"] for item in subscriptions)
+    daily = any(item["daily_digest_enabled"] for item in subscriptions)
+    weekly = any(item["weekly_digest_enabled"] for item in subscriptions)
+    hours = "、".join(f"{hour}:00" for hour in settings.digest_hours)
+    weekday = "一二三四五六日"[settings.weekly_digest_weekday]
+    plan = []
+    if immediate:
+        plan.append(("重要公告", "签证、奖学金、毕业等重要事项，分析完成后立即发送；有截止日期的还会在 D-7、D-3、D-1 和当天提醒。"))
+    if daily:
+        plan.append(("普通公告", f"工作日 {hours}（首尔时间）合并成一封汇总，发布后通常 3 小时内收到。"))
+    if weekly:
+        plan.append(("低优先级公告", f"讲座、活动、宣传等，每周{weekday} {settings.weekly_digest_hour}:00 汇总一次。"))
+    rows = "".join(f"<tr><td style='padding:10px 12px;font-weight:bold;white-space:nowrap;vertical-align:top'>{html.escape(name)}</td>"
+                   f"<td style='padding:10px 12px;color:#475467'>{html.escape(text)}</td></tr>" for name, text in plan)
+    account = f"{settings.app_base_url}/account"
+    body = f"""<main style="font-family:Arial,sans-serif;max-width:600px;margin:auto;line-height:1.7;color:#17213b">
+    <p style="color:#174b9b;font-weight:bold">PNU Notice</p>
+    <h1 style="font-size:24px;margin:0 0 12px">欢迎订阅，订阅已经生效</h1>
+    <p>从现在起，以下来源的新公告会自动整理成中文摘要，发送到 <strong>{html.escape(subscriber['email'])}</strong>：</p>
+    <p style="background:#f2f6fc;border-radius:10px;padding:12px 16px;font-weight:bold">{html.escape("、".join(enabled) or "（暂未选择来源）")}</p>
+    <h2 style="font-size:17px;margin:24px 0 6px">你会在什么时候收到邮件</h2>
+    <table style="border-collapse:collapse;width:100%;background:#f9fafb;border-radius:10px">{rows}</table>
+    <h2 style="font-size:17px;margin:24px 0 6px">两个小建议</h2>
+    <ul style="padding-left:20px;color:#475467">
+    <li>把 <strong>{html.escape(settings.from_email)}</strong> 加入通讯录，避免公告邮件被当成垃圾邮件。</li>
+    <li>设置一个密码，以后可以直接登录修改订阅：<a href="{html.escape(account)}">打开我的订阅</a></li></ul>
+    <p style="color:#667085;font-size:14px">历史公告不会补发，你只会收到从现在开始发布的新公告。</p>
+    {footer(settings, subscriber)}</main>"""
+    return "欢迎订阅 PNU Notice", body
+
+
 def notice_email(settings: Settings, subscriber: dict, notice: dict, analysis: dict,
                  notification_type: str) -> tuple[str, str]:
     updated = notification_type == "updated_notice"

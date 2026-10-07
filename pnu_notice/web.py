@@ -27,10 +27,10 @@ ACTION_MESSAGES = {"save": "订阅设置已保存。", "pause": "订阅已暂停
 
 STYLE = """
 :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17213b;background:#f5f7fb}
-*{box-sizing:border-box}body{margin:0}a{color:#174b9b}.nav{padding:16px 6vw;background:#fff;border-bottom:1px solid #e6e9f0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;flex-direction:column}a{color:#174b9b}.nav{padding:16px 6vw;background:#fff;border-bottom:1px solid #e6e9f0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .brand{font-weight:800;color:#174b9b;text-decoration:none;font-size:20px}.links{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .links a,.linkbtn{color:#344054;text-decoration:none;font-size:15px;background:none;border:0;padding:0;cursor:pointer;font-family:inherit}.links a.pill{background:#174b9b;color:#fff;padding:8px 16px;border-radius:999px}
-.wrap{max-width:720px;margin:48px auto;padding:0 16px}.wrap.wide{max-width:1180px}
+.wrap{max-width:720px;width:100%;margin:48px auto;padding:0 16px;flex:1 0 auto}.wrap.wide{max-width:1180px}
 .nav{position:sticky;top:0;z-index:10;background:#ffffffe6;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
 .brand{display:inline-flex;align-items:center;gap:10px;letter-spacing:-.01em}
 .home-hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:40px;align-items:center;padding:56px;border-radius:28px;color:#fff;

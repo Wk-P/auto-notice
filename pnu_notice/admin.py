@@ -24,11 +24,11 @@ AI_STATES = {"completed": ("已分析", "green"), "failed": ("原文降级", "gr
 NOTICE_STATUS = {"active": "进行中", "upcoming": "即将开始", "expired": "已过期", "closed": "已结束", "informational": "通知"}
 DELIVERY_TYPES = {"new_notice": "即时：新公告", "updated_notice": "即时：公告更新", "daily_digest": "定时汇总",
                   "weekly_digest": "每周汇总", "deadline_d7": "截止提醒 D-7", "deadline_d3": "截止提醒 D-3",
-                  "deadline_d1": "截止提醒 D-1", "deadline_day": "截止提醒 当天", "verification": "验证邮件"}
+                  "deadline_d1": "截止提醒 D-1", "deadline_day": "截止提醒 当天", "verification": "验证邮件", "welcome": "欢迎邮件"}
 DELIVERY_STATUS = {"pending": "待发送", "sending": "发送中", "sent": "已发送", "retrying": "重试中", "failed": "失败",
                    "cancelled": "已取消"}
 COMPONENTS = {"crawler": "抓取", "crawler_detail": "抓取详情页", "ai": "AI 分析", "ai_quota": "AI 余额不足",
-              "delivery_planner": "发信规划"}
+              "delivery_planner": "发信规划", "welcome_email": "欢迎邮件"}
 
 # Served as a file because the CSP forbids inline scripts: asks before destructive admin actions.
 ADMIN_JS = """document.addEventListener('submit', function (event) {

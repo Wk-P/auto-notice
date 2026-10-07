@@ -248,9 +248,39 @@ class PnuNoticeTests(unittest.TestCase):
         subscriber, subscriptions = service.get_by_management_token(management)
         self.assertEqual(subscriber["status"], "active")
         self.assertEqual([item["source_key"] for item in subscriptions], [SOURCES[0].key])
-        self.assertEqual(service.verify(mailer.sent[1][2].split("token=", 1)[1].split("'", 1)[0]), management)
+        self.assertEqual([subject for _, subject, _, _ in mailer.sent],
+                         ["还差一步：确认你的 PNU Notice 订阅", "欢迎订阅 PNU Notice", "还差一步：确认你的 PNU Notice 订阅"])
+        self.assertEqual(service.verify(mailer.sent[2][2].split("token=", 1)[1].split("'", 1)[0]), management)
         _, subscriptions = service.get_by_management_token(management)
         self.assertEqual([item["source_key"] for item in subscriptions], [SOURCES[1].key])
+        self.assertEqual(len(mailer.sent), 3)  # confirming new preferences of an active subscriber sends no second welcome
+
+    def test_welcome_email_describes_choices_and_failure_keeps_subscription(self):
+        mailer = FakeMailer()
+        service = SubscriptionService(self.db, self.settings, mailer)
+        service.subscribe("w@example.com", [SOURCES[2].key], True, True, False)
+        service.verify(mailer.sent[0][2].split("token=", 1)[1].split("'", 1)[0])
+        to, subject, body, _ = mailer.sent[1]
+        self.assertEqual((to, subject), ("w@example.com", "欢迎订阅 PNU Notice"))
+        self.assertIn(SOURCES[2].display_name, body)
+        self.assertIn("10:00、13:00、16:00、19:00", body)
+        self.assertNotIn("低优先级公告", body)  # weekly digest was not chosen
+        self.assertIn("/unsubscribe?token=", body)
+
+        class BrokenAfterFirst(FakeMailer):
+            def send(self, to, subject, body_html, key):
+                if subject.startswith("欢迎"):
+                    raise RuntimeError("provider down")
+                return super().send(to, subject, body_html, key)
+        broken = BrokenAfterFirst()
+        service = SubscriptionService(self.db, self.settings, broken)
+        service.subscribe("x@example.com", [SOURCES[0].key], True, True, True)
+        management = service.verify(broken.sent[0][2].split("token=", 1)[1].split("'", 1)[0])
+        subscriber, _ = service.get_by_management_token(management)
+        self.assertEqual(subscriber["status"], "active")
+        with self.db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM notification_deliveries WHERE notification_type='welcome' "
+                                          "AND subscriber_id=?", (subscriber["id"],)).fetchone()[0], "failed")
 
     def test_detail_text_is_not_split_by_inline_tags(self):
         document = """<div class="artclView"><p><span>2026</span>년 <b>10</b>월 신청 안내</p><p>둘째 줄</p></div>"""
