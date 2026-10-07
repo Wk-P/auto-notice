@@ -6,14 +6,15 @@
 
 ## 本地启动
 
-需要 Python 3.11 或更高版本。
+依赖由 [uv](https://docs.astral.sh/uv/) 管理，版本锁定在 `uv.lock`，Python 版本见 `.python-version`。
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+uv sync              # 创建 .venv 并按 uv.lock 安装依赖（含测试用的 pytest）
 cp .env.example .env
+uv run pytest        # 运行测试
 ```
+
+增加依赖用 `uv add 包名`，开发工具用 `uv add --dev 包名`，然后提交更新后的 `uv.lock`。Docker 镜像同样按 `uv.lock` 安装，本地和服务器的依赖版本一致。
 
 编辑 `.env`，至少设置：
 
@@ -25,14 +26,14 @@ cp .env.example .env
 初始化数据库并启动：
 
 ```bash
-pnu-notice init-db
-pnu-notice serve --host 0.0.0.0 --port 8000
+uv run pnu-notice init-db
+uv run pnu-notice serve --host 0.0.0.0 --port 8000
 ```
 
 另一个进程运行调度器：
 
 ```bash
-pnu-notice run-scheduler
+uv run pnu-notice run-scheduler
 ```
 
 调度器首次启动会从 `2026-07-01 00:00 Asia/Seoul` 回填。RSS 未覆盖该日期时，它会继续读取公告分页，以普通编号公告的整体日期范围作为停止条件。历史公告会分析并建立截止日期，但不会生成逐条历史邮件。完成后每隔 `POLL_INTERVAL_MINUTES` 检查三个 RSS。
@@ -40,11 +41,11 @@ pnu-notice run-scheduler
 也可以分别执行任务，适合 cron、容器任务或故障恢复：
 
 ```bash
-pnu-notice backfill
-pnu-notice poll
-pnu-notice process-ai --limit 50
-pnu-notice deliver --limit 200
-pnu-notice run-cycle
+uv run pnu-notice backfill
+uv run pnu-notice poll
+uv run pnu-notice process-ai --limit 50
+uv run pnu-notice deliver --limit 200
+uv run pnu-notice run-cycle
 ```
 
 使用 Docker Compose 时：
