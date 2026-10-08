@@ -48,7 +48,7 @@ class Settings:
             database_path=Path(os.getenv("DATABASE_PATH", "var/pnu_notice.sqlite3")),
             app_base_url=os.getenv("APP_BASE_URL", "http://localhost:8000").rstrip("/"),
             app_secret=os.getenv("APP_SECRET", "development-only-change-me"),
-            poll_interval_minutes=int(os.getenv("POLL_INTERVAL_MINUTES", "15")),
+            poll_interval_minutes=int(os.getenv("POLL_INTERVAL_MINUTES", "60")),
             backfill_start=os.getenv("BACKFILL_START", "2026-07-01T00:00:00+09:00"),
             requests_per_second=float(os.getenv("REQUESTS_PER_SECOND", "1")),
             http_timeout_seconds=int(os.getenv("HTTP_TIMEOUT_SECONDS", "30")),

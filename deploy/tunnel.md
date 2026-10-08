@@ -54,7 +54,7 @@ docker compose -f compose.tunnel.yaml ps
 docker compose -f compose.tunnel.yaml logs -f scheduler
 ```
 
-调度器首次启动会回填 2026-07-01 以来的公告（三个来源合计约 10–20 分钟），历史公告不会发邮件。之后每 15 分钟检查一次 RSS。
+调度器首次启动会回填 2026-07-01 以来的公告（三个来源合计约 10–20 分钟），历史公告不会发邮件。之后每小时检查一次 RSS（`POLL_INTERVAL_MINUTES`）。
 
 ## 5. 验证
 

@@ -16,7 +16,7 @@ from .config import Settings
 from .db import Database
 from .http import HttpClient
 from .sources import Source
-from .timeutil import SEOUL, iso_utc, now_utc, parse_datetime
+from .timeutil import SEOUL, iso_utc, parse_datetime
 
 
 NOTICE_ID_RE = re.compile(r"/(\d+)/artclView\.do|(?:nttId|articleNo|bbsId)=(\d+)", re.I)
@@ -24,8 +24,6 @@ DATE_RE = re.compile(r"(20\d{2})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})(?:\s+(\d{1,
 FILE_RE = re.compile(r"\.(pdf|docx?|xlsx?|txt|hwp|hwpx|pptx?|zip)(?:$|[?#])", re.I)
 BLOCK_TAGS = ["p", "div", "li", "tr", "table", "ul", "ol", "section", "article", "blockquote", "pre",
               "h1", "h2", "h3", "h4", "h5", "h6", "dd", "dt"]
-# Existing notices seen again in RSS are re-fetched for change detection at most this often.
-DETAIL_RECHECK = timedelta(hours=6)
 # A notice first seen by polling but published this long before backfill finished was missed by the
 # backfill, not newly posted; it is stored as historical so it is never mailed as new.
 HISTORICAL_MARGIN = timedelta(days=1)
@@ -338,9 +336,9 @@ class Crawler:
             cutoff = None if historical else self._historical_cutoff(source)
             for item in items:
                 stats["seen"] += 1
-                known = self._known(source, item)
-                # Backfill never needs to refresh stored notices; polling re-checks them periodically for edits.
-                if known and (historical or now_utc() - datetime.fromisoformat(known["last_checked_at"]) < DETAIL_RECHECK):
+                # Published notices are not edited, so a stored notice is never fetched again; only new IDs
+                # cost a request to the school site.
+                if self._known(source, item):
                     stats["skipped"] += 1
                     continue
                 try:

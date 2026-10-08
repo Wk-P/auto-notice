@@ -162,7 +162,7 @@ def preference_fields(settings: Settings, sources: set[str], immediate: bool, da
     frequencies = (
         ("immediate", immediate, "重要公告立即发送 + 截止提醒", "签证、奖学金、毕业等重要事项；申请、报名等截止前提醒"),
         ("daily", daily, f"普通公告在工作日 {'、'.join(f'{hour}:00' for hour in settings.digest_hours)} 汇总发送",
-         "周一至周五每天最多几封，发布后通常 3 小时内收到；周末的公告合并到周一第一封"),
+         "周一至周五每天最多几封，发布后通常 4 小时内收到；周末的公告合并到周一第一封"),
         ("weekly", weekly, f"低优先级公告每周{weekday} {settings.weekly_digest_hour}:00 汇总", "讲座、活动、宣传等信息"),
     )
     frequency_html = "".join(
@@ -227,6 +227,8 @@ def home_page(view: View, deleted: bool = False, stats: dict | None = None) -> s
         # One text span, so the relative time wraps with the sentence instead of becoming its own flex column.
         live = f'<div class="live"><span class="pulse"></span><span>已收录 {stats["notices"]} 条官方公告{checked}</span></div>'
     hours = "、".join(f"{hour}:00" for hour in view.settings.digest_hours)
+    minutes = view.settings.poll_interval_minutes
+    poll = "每小时" if minutes == 60 else f"{minutes} 分钟"
     return notice + f"""<section class="home-hero"><div>
     <span class="eyebrow">釜山大学 · 计算机学部 &amp; 国际处</span>
     <h1>重要公告，<br><em>不再错过</em></h1>
@@ -238,8 +240,8 @@ def home_page(view: View, deleted: bool = False, stats: dict | None = None) -> s
     <div class="due"><span>申请截止</span><b>10月12日 13:00</b></div>
     <p style="margin:10px 0 0;font-size:12px"><span class="tag blue">计算机大学院</span>查看学校原公告 →</p></div></section>
 
-    <div class="strip"><div><b>3 个</b><span>官方公告来源</span></div><div><b>15 分钟</b><span>检查一次学校网站</span></div>
-    <div><b>3 小时内</b><span>工作日普通公告送达</span></div><div><b>中文摘要</b><span>每条都附学校原文链接</span></div></div>
+    <div class="strip"><div><b>3 个</b><span>官方公告来源</span></div><div><b>{poll}</b><span>检查一次学校网站</span></div>
+    <div><b>4 小时内</b><span>工作日普通公告送达</span></div><div><b>中文摘要</b><span>每条都附学校原文链接</span></div></div>
 
     <h2 class="section-title">实际效果</h2><p class="section-sub">真实的网站和邮件截图</p>
     <div class="showcase">

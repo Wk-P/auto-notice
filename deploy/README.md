@@ -51,7 +51,7 @@ docker compose -f compose.prod.yaml ps
 docker compose -f compose.prod.yaml logs --tail=100 web scheduler caddy
 ```
 
-Caddy 会自动申请和续期 TLS 证书。调度器首次运行会执行历史回填，然后进入每 15 分钟监控。回填进度可查看：
+Caddy 会自动申请和续期 TLS 证书。调度器首次运行会执行历史回填，然后按 `POLL_INTERVAL_MINUTES`（默认每小时）监控。回填进度可查看：
 
 ```bash
 docker compose -f compose.prod.yaml logs -f scheduler

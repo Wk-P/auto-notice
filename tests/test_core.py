@@ -498,5 +498,30 @@ class PnuNoticeTests(unittest.TestCase):
         self.assertEqual(tuple(old), ("cancelled", "replaced by scheduled reminders"))
 
 
+    def test_stored_notices_are_never_fetched_again(self):
+        from datetime import timedelta
+        import pnu_notice.crawler as crawler_module
+        crawler = Crawler(self.db, self.settings)
+        discovered = []
+        for number in range(15):
+            detail = self._detail(f"正文{number}")
+            detail.external_id = str(1000 + number)
+            crawler.save(SOURCES[0], detail, True)
+            discovered.append(DiscoveredNotice(detail.external_id, "t", f"https://example.test/{number}"))
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE notices SET last_checked_at=?", (iso_utc(datetime.now(SEOUL) - timedelta(days=2)),))
+            conn.execute("UPDATE sources SET backfill_completed_at=?", (iso_utc(),))
+        fetched = []
+        crawler.fetch_detail = lambda source, item: fetched.append(item.url) or self._detail()
+        original = crawler_module.parse_rss
+        crawler_module.parse_rss = lambda *args: discovered
+        crawler.http.request = lambda url: type("R", (), {"text": ""})()
+        try:
+            crawler.run_incremental(SOURCES[0])
+        finally:
+            crawler_module.parse_rss = original
+        self.assertEqual(fetched, [])
+
+
 if __name__ == "__main__":
     unittest.main()
