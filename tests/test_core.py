@@ -523,5 +523,36 @@ class PnuNoticeTests(unittest.TestCase):
         self.assertEqual(fetched, [])
 
 
+    def test_empty_rss_response_is_retried_before_failing(self):
+        crawler = Crawler(self.db, self.settings)
+        crawler.RSS_RETRY_DELAY = 0
+        feed = """<rss><channel><item><title>공지</title><link>/bbs/cse/2055/42/artclView.do</link></item></channel></rss>"""
+        responses = iter(["", feed])
+        crawler.http.request = lambda url: type("R", (), {"text": next(responses)})()
+        self.assertEqual([item.external_id for item in crawler.fetch_rss(SOURCES[0])], ["42"])
+        crawler.http.request = lambda url: type("R", (), {"text": ""})()
+        with self.assertRaises(Exception):
+            crawler.fetch_rss(SOURCES[0])
+
+    def test_alerts_only_for_failures_concentrated_in_recent_hours(self):
+        from datetime import timedelta
+        from pnu_notice.monitoring import AlertWorker
+        settings = replace(self.settings, admin_email="admin@example.com")
+        mailer = FakeMailer()
+        def fail(hours_ago):
+            with self.db.transaction() as conn:
+                conn.execute("INSERT INTO job_failures(component,source_key,error_message,occurred_at) VALUES(?,?,?,?)",
+                             ("crawler", SOURCES[0].key, "no element found",
+                              iso_utc(datetime.now(SEOUL) - timedelta(hours=hours_ago))))
+        for hours in (9, 6, 1):  # scattered over the day: no alert
+            fail(hours)
+        self.assertEqual(AlertWorker(self.db, settings, mailer).alert_repeated_failures(), 0)
+        fail(0.5)
+        fail(0.1)  # three within the last three hours: alert
+        self.assertEqual(AlertWorker(self.db, settings, mailer).alert_repeated_failures(), 1)
+        self.assertIn("抓取持续失败", mailer.sent[0][1])
+        self.assertIn(SOURCES[0].display_name, mailer.sent[0][1])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,7 @@ import hashlib
 import html
 import json
 import re
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -232,6 +233,20 @@ class Crawler:
         self.settings = settings
         self.http = http or HttpClient(settings.http_timeout_seconds, settings.requests_per_second)
 
+    RSS_ATTEMPTS = 3
+    RSS_RETRY_DELAY = 20  # seconds; the school site sometimes answers with an empty body for a moment
+
+    def fetch_rss(self, source: Source) -> list[DiscoveredNotice]:
+        """An empty or malformed feed is retried a couple of times before the run counts as failed."""
+        for attempt in range(self.RSS_ATTEMPTS):
+            try:
+                return parse_rss(self.http.request(source.rss_url).text, source.page_url)
+            except ET.ParseError:
+                if attempt == self.RSS_ATTEMPTS - 1:
+                    raise
+                time.sleep(self.RSS_RETRY_DELAY)
+        return []
+
     def fetch_detail(self, source: Source, item: DiscoveredNotice) -> NoticeDetail:
         response = self.http.request(item.url)
         return parse_detail(source, item.url, response.text, item)
@@ -287,7 +302,7 @@ class Crawler:
             raise ValueError("BACKFILL_START is invalid")
 
         def discover() -> list[DiscoveredNotice]:
-            rss_items = parse_rss(self.http.request(source.rss_url).text, source.page_url)
+            rss_items = self.fetch_rss(source)
             collected = {item.external_id: item for item in rss_items
                          if not item.published_at or item.published_at >= boundary}
             oldest = min((item.published_at for item in rss_items if item.published_at), default=None)
@@ -332,7 +347,7 @@ class Crawler:
             if discover:
                 items = discover()
             else:
-                items = parse_rss(self.http.request(source.rss_url).text, source.page_url)
+                items = self.fetch_rss(source)
             cutoff = None if historical else self._historical_cutoff(source)
             for item in items:
                 stats["seen"] += 1
