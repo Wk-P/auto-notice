@@ -14,6 +14,7 @@ from urllib.parse import parse_qs
 
 from . import admin
 from .accounts import AccountService, check_password
+from .branding import ICON_LINKS
 from .config import Settings
 from .security import verify_turnstile
 from .sources import SOURCES
@@ -25,7 +26,8 @@ SESSION_COOKIE = "pnu_session"
 SCREENSHOT_DIR = Path(__file__).parent / "static" / "screenshots"
 SCREENSHOTS = ("home-mobile.jpg", "email-important.jpg", "email-digest.jpg")
 BRANDING_DIR = Path(__file__).parent / "static" / "branding"
-BRANDING_FILES = ("pnu-crest.png", "favicon.png", "apple-touch-icon.png")
+BRANDING_FILES = ("pnu-crest.png", "favicon.png", "apple-touch-icon.png",
+                  "pnu-favicon-v2.png", "pnu-touch-icon-v2.png")
 CSRF_PROTECTED = {"/logout", "/account", "/account/password", "/account/delete", "/admin/subscribers", "/admin/notices"}
 TURNSTILE_ACTION = "subscribe"
 STATUS_LABELS = admin.STATUS_LABELS
@@ -146,8 +148,7 @@ def layout(view: View, content: str, title: str, wide: bool = False) -> str:
     page_title = "PNU Notice" if title == "PNU Notice" else f"{title} · PNU Notice"
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{html.escape(page_title)}</title>
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/branding/favicon.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/branding/apple-touch-icon.png">
+    {ICON_LINKS}
     <style>{STYLE}</style></head><body><nav class="nav"><a class="brand" href="/">{LOGO}PNU Notice</a>
     <div class="links">{links}</div></nav>
     <div class="wrap{' wide' if wide else ''}">{content}</div>{site_footer()}</body></html>"""

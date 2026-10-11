@@ -7,6 +7,7 @@ from datetime import datetime, time, timedelta
 from urllib.parse import urlencode
 
 from .config import Settings
+from .branding import ICON_LINKS
 from .db import Database
 from .delivery import next_digest_slot
 from .sources import SOURCE_BY_KEY, SOURCES
@@ -177,7 +178,7 @@ def shell(email: str, csrf: str, active: str, title: str, subtitle: str, content
                   for href, label in (("/admin", "总览"), ("/admin/notices", "公告"), ("/admin/subscribers", "订阅用户")))
     flash_html = f'<div class="flash">{esc(flash)}</div>' if flash else ""
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>{esc(title)} · PNU Notice 管理后台</title><style>{ADMIN_STYLE}</style><script src="/static/admin.js" defer></script></head>
+    <title>{esc(title)} · PNU Notice 管理后台</title>{ICON_LINKS}<style>{ADMIN_STYLE}</style><script src="/static/admin.js" defer></script></head>
     <body><div class="shell"><aside class="side"><a class="logo" href="/admin">PNU Notice<small>管理后台</small></a><nav>{nav}</nav>
     <div class="foot"><span>{esc(email)}<br></span><span class="wide-only"><a href="/">打开网站</a> · <a href="/account">我的账户</a> · </span>
     <form method="post" action="/logout" style="display:inline"><input type="hidden" name="csrf" value="{csrf}"><button>退出</button></form></div></aside>
