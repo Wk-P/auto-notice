@@ -1,0 +1,80 @@
+# Docker Swarm version of compose.tunnel.yaml, deployed by `server/ctl.sh` with `docker stack deploy`.
+# Swarm restarts crashed or unhealthy tasks and rolls a failed update back to the previous image.
+# server/ctl.sh supplies IMAGE (built on the server), APP_DIR, HOST_UID and HOST_GID; stack deploy does not read .env for these.
+# The database lives in the same volume compose.tunnel.yaml uses, so switching between the two modes keeps the data.
+x-app: &app
+  image: ${IMAGE:?Run through server/ctl.sh}
+  env_file: .env
+  volumes:
+    - pnu_data:/app/var
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+
+services:
+  web:
+    <<: *app
+    command: ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "60", "--access-logfile", "-", "pnu_notice.web:create_app()"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5).read()"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 15s
+    deploy:
+      replicas: 1
+      resources:
+        limits: {cpus: "1.0", memory: 512M}
+      restart_policy: {condition: any, delay: 5s}
+      # The new web starts and turns healthy before the old one stops, so updates have no downtime.
+      update_config: {order: start-first, failure_action: rollback, monitor: 30s}
+      rollback_config: {order: start-first}
+
+  scheduler:
+    <<: *app
+    command: ["pnu-notice", "run-scheduler"]
+    deploy:
+      replicas: 1
+      resources:
+        limits: {cpus: "1.0", memory: 512M}
+      restart_policy: {condition: any, delay: 10s}
+      # Never two schedulers at once: they would send duplicate emails.
+      update_config: {order: stop-first, failure_action: rollback, monitor: 30s}
+      rollback_config: {order: stop-first}
+
+  backup:
+    <<: *app
+    command: ["sh", "-c", "while true; do pnu-notice backup --directory /app/backups --retention-days 14; sleep 86400; done"]
+    # Root (to read the database volume) with the deploying user's group, which owns backups/; with every
+    # capability dropped, root can only write there through those group permissions.
+    user: "0:${HOST_GID:?Run through server/ctl.sh}"
+    volumes:
+      - pnu_data:/app/var
+      - ${APP_DIR:?Run through server/ctl.sh}/backups:/app/backups
+    deploy:
+      replicas: 1
+      resources:
+        limits: {cpus: "0.25", memory: 128M}
+      restart_policy: {condition: any, delay: 30s}
+      update_config: {order: stop-first, failure_action: rollback}
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    # Runs as the deploying user so it can read the 0600 tunnel credentials in cloudflared/.
+    user: "${HOST_UID:?Run through server/ctl.sh}:${HOST_GID:?Run through server/ctl.sh}"
+    volumes:
+      - ${APP_DIR:?Run through server/ctl.sh}/cloudflared:/etc/cloudflared:ro
+    deploy:
+      replicas: 1
+      resources:
+        limits: {cpus: "0.5", memory: 128M}
+      restart_policy: {condition: any, delay: 5s}
+      update_config: {order: start-first, failure_action: rollback}
+
+volumes:
+  # Created by compose.tunnel.yaml or `server/ctl.sh setup`; external so swarm never creates an empty one.
+  pnu_data:
+    external: true
+    name: pnu-notice_pnu_data

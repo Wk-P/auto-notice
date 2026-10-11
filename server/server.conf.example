@@ -1,0 +1,30 @@
+# server/ctl.sh 的服务器配置。复制为 server/server.conf 后修改（server.conf 不进 git）。
+# 管理多台服务器时，每台一个文件，用 `server/ctl.sh -c server/tokyo.conf <命令>` 选择。
+
+# ssh 目标：~/.ssh/config 里的 Host 别名或 user@ip。必须能用密钥免密登录。
+HOST="user@server"
+
+# 服务器上的项目目录，相对于登录用户的家目录。
+DIR="pnu-notice"
+
+# 公网地址，部署后用来检查 /healthz。留空则跳过这项检查。
+URL="https://notice.example.com"
+
+# compose：docker compose + compose.tunnel.yaml（restart: unless-stopped）
+# swarm：  docker stack + compose.swarm.yaml（健康检查失败自动重启、更新失败自动回滚）
+# 改模式请用 `server/ctl.sh switch swarm|compose`，不要只改这一行。
+MODE="compose"
+
+# compose 模式下 deploy 默认重建的服务（cloudflared 总会保持运行）。
+SERVICES="web scheduler backup"
+
+# swarm 模式：stack 名、保留几个旧镜像用于 rollback。
+STACK_NAME="pnu-notice"
+KEEP_IMAGES=3
+
+# swarm-init 用：单节点 swarm 只需本机地址；地址池不要和服务器已有的网段重叠。
+SWARM_ADVERTISE_ADDR="127.0.0.1"
+SWARM_ADDR_POOL="10.201.0.0/16"
+
+# check / setup 时从服务器上测试能否访问的抓取来源（学校网站会挡部分机器）。
+CHECK_URLS="https://cse.pusan.ac.kr/bbs/cse/2055/rssList.do?row=1 https://international.pusan.ac.kr/bbs/international/2081/rssList.do?row=1"

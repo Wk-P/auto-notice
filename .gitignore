@@ -14,3 +14,6 @@ cloudflared/
 var/
 .DS_Store
 scripts/
+server/*.conf
+!server/server.conf.example
+server/backups/
