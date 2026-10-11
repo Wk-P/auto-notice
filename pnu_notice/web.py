@@ -27,7 +27,7 @@ SCREENSHOT_DIR = Path(__file__).parent / "static" / "screenshots"
 SCREENSHOTS = ("home-mobile.jpg", "email-important.jpg", "email-digest.jpg")
 BRANDING_DIR = Path(__file__).parent / "static" / "branding"
 BRANDING_FILES = ("pnu-crest.png", "favicon.png", "apple-touch-icon.png",
-                  "pnu-favicon-v2.png", "pnu-touch-icon-v2.png")
+                  "pnu-favicon-v2.png", "pnu-touch-icon-v2.png", "pnu-favicon-v3.ico")
 CSRF_PROTECTED = {"/logout", "/account", "/account/password", "/account/delete", "/admin/subscribers", "/admin/notices"}
 TURNSTILE_ACTION = "subscribe"
 STATUS_LABELS = admin.STATUS_LABELS
@@ -488,7 +488,8 @@ class WebApp:
             start_response("404 Not Found", [("Content-Type", "text/plain")])
             return [b"not found"]
         data = (BRANDING_DIR / name).read_bytes()
-        start_response("200 OK", [("Content-Type", "image/png"), ("Content-Length", str(len(data))),
+        content_type = "image/x-icon" if name.endswith(".ico") else "image/png"
+        start_response("200 OK", [("Content-Type", content_type), ("Content-Length", str(len(data))),
                                   ("Cache-Control", "public, max-age=86400"), ("X-Content-Type-Options", "nosniff")])
         return [data]
 
@@ -536,7 +537,9 @@ class WebApp:
         if path.startswith("/static/branding/") and method == "GET":
             return self._branding(start_response, path.removeprefix("/static/branding/"))
         if path == "/favicon.ico" and method == "GET":
-            return self._branding(start_response, "favicon.png")
+            return self._branding(start_response, "pnu-favicon-v3.ico")
+        if path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png") and method == "GET":
+            return self._branding(start_response, "pnu-touch-icon-v2.png")
         if path == "/static/admin.js" and method == "GET":
             return self._response(start_response, admin.ADMIN_JS, content_type="text/javascript; charset=utf-8")
         if path == "/static/check-email.js" and method == "GET":
