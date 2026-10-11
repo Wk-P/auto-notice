@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import secrets
 import traceback
 from pathlib import Path
 from dataclasses import dataclass
@@ -450,13 +451,17 @@ class WebApp:
     @staticmethod
     def _response(start_response, content: str, status: HTTPStatus = HTTPStatus.OK, headers: list | None = None,
                   content_type: str = "text/html; charset=utf-8"):
+        # Cloudflare reads this nonce from CSP and applies it to injected detection scripts.
+        nonce = secrets.token_urlsafe(24)
         data = content.encode("utf-8")
         start_response(f"{status.value} {status.phrase}", [
             ("Content-Type", content_type), ("Content-Length", str(len(data))),
             ("X-Content-Type-Options", "nosniff"), ("Referrer-Policy", "no-referrer"),
             ("X-Frame-Options", "DENY"), ("Cache-Control", "no-store"),
             ("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; "
-             "script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; "
+             f"script-src 'self' 'nonce-{nonce}' https://challenges.cloudflare.com https://static.cloudflareinsights.com; "
+             "connect-src 'self' https://challenges.cloudflare.com https://cloudflareinsights.com; "
+             "frame-src 'self' https://challenges.cloudflare.com; "
              "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"),
             *(headers or []),
         ])

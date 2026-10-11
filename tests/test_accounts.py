@@ -292,6 +292,29 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(admin.get("/static/admin.js")[0], 200)
         self.assertEqual(admin.get("/admin")[0], 200)
 
+    def test_csp_allows_cloudflare_analytics_without_inline_scripts(self):
+        captured = {}
+
+        def start_response(status, headers):
+            captured.update(headers)
+
+        self.client.app._response(start_response, "test")
+        policy = captured["Content-Security-Policy"]
+        directives = dict(part.strip().split(" ", 1) for part in policy.split(";") if part.strip())
+        self.assertIn("https://static.cloudflareinsights.com", directives["script-src"].split())
+        self.assertIn("https://cloudflareinsights.com", directives["connect-src"].split())
+        self.assertIn("'self'", directives["connect-src"].split())
+        self.assertNotIn("'unsafe-inline'", directives["script-src"].split())
+        nonce = re.search(r"'nonce-([A-Za-z0-9_-]+)'", policy)
+        self.assertIsNotNone(nonce)
+        self.assertGreaterEqual(len(nonce.group(1)), 32)
+        self.assertIn("'self'", directives["frame-src"].split())
+        self.client.app._response(start_response, "test")
+        self.assertNotEqual(policy, captured["Content-Security-Policy"])
+        page = self._admin_client().get("/admin")[1]
+        self.assertIn('<script src="/static/admin.js" defer></script>', page)
+        self.assertNotRegex(page, r"<script(?:\s[^>]*)?>\s*[^<\s]")
+
     def test_admin_subscriber_filters_and_search(self):
         self._register("one@example.com")
         self.client.cookies.clear()
