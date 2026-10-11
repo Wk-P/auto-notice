@@ -23,6 +23,8 @@ SESSION_COOKIE = "pnu_session"
 # Only these files are served from /static/screenshots/, so the route cannot be used to read anything else.
 SCREENSHOT_DIR = Path(__file__).parent / "static" / "screenshots"
 SCREENSHOTS = ("home-mobile.jpg", "email-important.jpg", "email-digest.jpg")
+BRANDING_DIR = Path(__file__).parent / "static" / "branding"
+BRANDING_FILES = ("pnu-crest.png", "favicon.png", "apple-touch-icon.png")
 CSRF_PROTECTED = {"/logout", "/account", "/account/password", "/account/delete", "/admin/subscribers", "/admin/notices"}
 TURNSTILE_ACTION = "subscribe"
 STATUS_LABELS = admin.STATUS_LABELS
@@ -37,6 +39,7 @@ STYLE = """
 .wrap{max-width:720px;width:100%;margin:48px auto;padding:0 16px;flex:1 0 auto}.wrap.wide{max-width:1180px}
 .nav{position:sticky;top:0;z-index:10;background:#ffffffe6;backdrop-filter:saturate(180%) blur(12px);-webkit-backdrop-filter:saturate(180%) blur(12px)}
 .brand{display:inline-flex;align-items:center;gap:10px;letter-spacing:-.01em}
+.pnu-logo{width:34px;height:34px;object-fit:contain;flex-shrink:0}
 .home-hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:40px;align-items:center;padding:56px;border-radius:28px;color:#fff;
 background:radial-gradient(1200px 400px at 10% -20%,#3b82f633,transparent),radial-gradient(800px 500px at 110% 120%,#ffcf4a26,transparent),linear-gradient(135deg,#0a2a57,#123f7f 55%,#1966bd);
 box-shadow:0 30px 60px -20px #0a2a5780;position:relative;overflow:hidden}
@@ -99,9 +102,7 @@ class View:
         return f'<input type="hidden" name="csrf" value="{self.csrf}">' if self.csrf else ""
 
 
-LOGO = ('<svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#174b9b"/>'
-        '<path d="M16 7.5a6 6 0 0 0-6 6v4.2l-1.6 2.6c-.4.7.1 1.5.9 1.5h13.4c.8 0 1.3-.8.9-1.5L22 17.7v-4.2a6 6 0 0 0-6-6Z" fill="#fff"/>'
-        '<path d="M13.6 23.4a2.5 2.5 0 0 0 4.8 0" stroke="#ffcf4a" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>')
+LOGO = '<img class="pnu-logo" src="/static/branding/pnu-crest.png" width="34" height="34" alt="釜山大学校徽">'
 
 
 DEVELOPER = "Wk-P"
@@ -143,7 +144,10 @@ def layout(view: View, content: str, title: str, wide: bool = False) -> str:
         links = '<a href="/login">登录</a><a class="pill" href="/subscribe">订阅</a>'
     page_title = "PNU Notice" if title == "PNU Notice" else f"{title} · PNU Notice"
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>{html.escape(page_title)}</title><style>{STYLE}</style></head><body><nav class="nav"><a class="brand" href="/">{LOGO}PNU Notice</a>
+    <title>{html.escape(page_title)}</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/branding/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/branding/apple-touch-icon.png">
+    <style>{STYLE}</style></head><body><nav class="nav"><a class="brand" href="/">{LOGO}PNU Notice</a>
     <div class="links">{links}</div></nav>
     <div class="wrap{' wide' if wide else ''}">{content}</div>{site_footer()}</body></html>"""
 
@@ -472,6 +476,16 @@ class WebApp:
                                   ("Cache-Control", "public, max-age=86400"), ("X-Content-Type-Options", "nosniff")])
         return [data]
 
+    @staticmethod
+    def _branding(start_response, name: str):
+        if name not in BRANDING_FILES:
+            start_response("404 Not Found", [("Content-Type", "text/plain")])
+            return [b"not found"]
+        data = (BRANDING_DIR / name).read_bytes()
+        start_response("200 OK", [("Content-Type", "image/png"), ("Content-Length", str(len(data))),
+                                  ("Cache-Control", "public, max-age=86400"), ("X-Content-Type-Options", "nosniff")])
+        return [data]
+
     def _session_cookie(self, token: str | None) -> tuple[str, str]:
         secure = "; Secure" if self.secure_cookie else ""
         if token is None:
@@ -513,6 +527,10 @@ class WebApp:
                               "PNU Notice", wide=True)
         if path.startswith("/static/screenshots/") and method == "GET":
             return self._screenshot(start_response, path.rsplit("/", 1)[-1])
+        if path.startswith("/static/branding/") and method == "GET":
+            return self._branding(start_response, path.removeprefix("/static/branding/"))
+        if path == "/favicon.ico" and method == "GET":
+            return self._branding(start_response, "favicon.png")
         if path == "/static/admin.js" and method == "GET":
             return self._response(start_response, admin.ADMIN_JS, content_type="text/javascript; charset=utf-8")
         if path == "/static/check-email.js" and method == "GET":
