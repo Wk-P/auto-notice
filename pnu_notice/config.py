@@ -58,7 +58,7 @@ class Settings:
             from_name=os.getenv("FROM_NAME", "PNU Notice"),
             from_email=os.getenv("FROM_EMAIL", "notice@example.com"),
             admin_email=os.getenv("ADMIN_EMAIL") or None,
-            digest_hours=tuple(sorted(int(hour) for hour in os.getenv("DIGEST_HOURS", "10,13,16,19").split(",")
+            digest_hours=tuple(sorted(int(hour) for hour in os.getenv("DIGEST_HOURS", "19").split(",")
                                       if hour.strip())),
             weekly_digest_weekday=int(os.getenv("WEEKLY_DIGEST_WEEKDAY", "4")),
             weekly_digest_hour=int(os.getenv("WEEKLY_DIGEST_HOUR", "19")),

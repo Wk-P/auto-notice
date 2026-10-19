@@ -24,10 +24,9 @@ def next_digest_slot(now: datetime, hours: tuple[int, ...]) -> datetime:
     raise ValueError("DIGEST_HOURS must list at least one hour")
 
 
-REMINDER_DAYS = (7, 3, 1, 0)
-# Notices published before someone subscribed (including the historical backfill) only get the last two reminders,
-# so a new subscriber is not flooded with D-7 and D-3 mails for everything already announced.
-LATE_REMINDER_DAYS = (1, 0)
+REMINDER_DAYS = (1,)
+# Historical notices use the same single reminder as new notices.
+LATE_REMINDER_DAYS = (1,)
 REMINDER_KINDS = {7: "deadline_d7", 3: "deadline_d3", 1: "deadline_d1", 0: "deadline_day"}
 # Reminders whose time passed while the scheduler was down are skipped rather than sent in a burst.
 REMINDER_GRACE = timedelta(hours=2)
@@ -51,7 +50,7 @@ def end_of_day_if_date_only(deadline_at: datetime) -> datetime:
 
 
 def reminder_time(deadline_at: datetime, days: int, hours: tuple[int, ...]) -> datetime:
-    """Reminders go out with the first digest slot (10:00 Seoul) on the day N days before the deadline. A same-day
+    """Reminders go out with the first configured digest slot (Seoul time) on the day N days before the deadline. A same-day
     reminder that would arrive less than 2 hours before the deadline moves to the previous evening's last slot."""
     local = end_of_day_if_date_only(deadline_at)
     day = local.date() - timedelta(days=days)
@@ -77,6 +76,9 @@ class ReminderPlanner:
             conn.execute("""UPDATE notification_deliveries SET status='cancelled',error='replaced by scheduled reminders'
                             WHERE notification_type LIKE 'deadline_%' AND status IN ('pending','retrying')
                             AND dedupe_key NOT LIKE 'deadline:%'""")
+            conn.execute("""UPDATE notification_deliveries SET status='cancelled',error='replaced by single deadline reminder'
+                            WHERE notification_type IN ('deadline_d7','deadline_d3','deadline_day')
+                            AND status IN ('pending','retrying')""")
             deadlines = conn.execute(
                 """SELECT d.*,n.created_at AS notice_created,n.source_key FROM deadlines d JOIN notices n ON n.id=d.notice_id
                    WHERE d.active=1 AND d.deadline_at>?""", (iso_utc(now),)).fetchall()
@@ -95,6 +97,18 @@ class ReminderPlanner:
                     for subscriber in subscribers:
                         published_before_subscribing = (subscriber["verified_at"] or "") >= deadline["notice_created"]
                         if published_before_subscribing and days not in LATE_REMINDER_DAYS:
+                            continue
+                        # AI may extract several labels for the same deadline. Also respect reminders
+                        # already sent under the old D-7/D-3/D-Day schedule.
+                        duplicate = conn.execute(
+                            """SELECT 1 FROM notification_deliveries d JOIN deadlines previous
+                               ON previous.id=json_extract(d.payload_json,'$.deadline_id')
+                               WHERE d.subscriber_id=? AND d.notice_id=? AND previous.deadline_at=?
+                               AND d.notification_type LIKE 'deadline_%'
+                               AND d.status IN ('pending','retrying','sending','sent') LIMIT 1""",
+                            (subscriber["id"], deadline["notice_id"], deadline["deadline_at"]),
+                        ).fetchone()
+                        if duplicate:
                             continue
                         cursor = conn.execute(
                             """INSERT OR IGNORE INTO notification_deliveries(subscriber_id,notice_id,notification_type,
@@ -260,6 +274,18 @@ class DeliveryWorker:
                         if not eligible:
                             continue
                         if item["notification_type"].startswith("deadline_"):
+                            recent_notice = conn.execute(
+                                """SELECT 1 FROM notification_deliveries
+                                   WHERE subscriber_id=? AND notice_id=?
+                                   AND notification_type IN ('new_notice','updated_notice','daily_digest','weekly_digest')
+                                   AND ((status='sent' AND sent_at>=?)
+                                        OR (status IN ('pending','retrying','sending') AND scheduled_at<=?
+                                            AND (next_attempt_at IS NULL OR next_attempt_at<=?))) LIMIT 1""",
+                                (item["subscriber_id"], item["notice_id"],
+                                 iso_utc(datetime.fromisoformat(now) - timedelta(hours=24)), now, now),
+                            ).fetchone()
+                            if recent_notice:
+                                continue
                             deadline = conn.execute("SELECT * FROM deadlines WHERE id=? AND active=1 AND deadline_at>?",
                                                     (json.loads(item["payload_json"])["deadline_id"], now)).fetchone()
                             if not deadline:  # deadline withdrawn by a notice update, or already passed

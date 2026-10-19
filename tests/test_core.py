@@ -264,7 +264,7 @@ class PnuNoticeTests(unittest.TestCase):
         to, subject, body, _ = mailer.sent[1]
         self.assertEqual((to, subject), ("w@example.com", "欢迎订阅 PNU Notice"))
         self.assertIn(SOURCES[2].display_name, body)
-        self.assertIn("10:00、13:00、16:00、19:00", body)
+        self.assertIn("、".join(f"{hour}:00" for hour in self.settings.digest_hours), body)
         self.assertNotIn("低优先级公告", body)  # weekly digest was not chosen
         self.assertIn("/unsubscribe?token=", body)
 
@@ -377,6 +377,16 @@ class PnuNoticeTests(unittest.TestCase):
         self.assertTrue(all(r[0] == "retrying" and r[1] == 0 and r[2] for r in rows))
 
 
+    def test_daily_digest_at_seven_pm_on_weekdays(self):
+        hours = (19,)
+        def slot(*args):
+            return next_digest_slot(datetime(*args, tzinfo=SEOUL), hours).strftime("%a %H:%M")
+        self.assertEqual(slot(2026, 10, 7, 18, 59), "Wed 19:00")
+        self.assertEqual(slot(2026, 10, 7, 19, 0), "Thu 19:00")
+        self.assertEqual(slot(2026, 10, 9, 19, 1), "Mon 19:00")
+        self.assertEqual(slot(2026, 10, 10, 6, 0), "Mon 19:00")
+        self.assertEqual(slot(2026, 10, 11, 23, 0), "Mon 19:00")
+
     def test_digest_slots_are_four_times_on_weekdays_only(self):
         hours = (10, 13, 16, 19)
         def slot(*args):
@@ -444,6 +454,7 @@ class PnuNoticeTests(unittest.TestCase):
         return notice_id
 
     def test_reminders_reach_current_subscribers_only(self):
+        self.settings = replace(self.settings, digest_hours=(7,))
         early = self._active_subscriber()  # subscribed before the notice was published
         late = self._active_subscriber(email="b@example.com")
         with self.db.transaction() as conn:
@@ -458,21 +469,74 @@ class PnuNoticeTests(unittest.TestCase):
                 return sorted(tuple(row) for row in conn.execute(
                     "SELECT subscriber_id,notification_type FROM notification_deliveries WHERE notification_type LIKE 'deadline%'"))
 
-        self.assertEqual(run(2026, 10, 9, 10, 5), [(early, "deadline_d7")])  # late subscriber skips D-7/D-3
-        self.assertEqual(run(2026, 10, 9, 13, 0), [(early, "deadline_d7")])  # same round again: no duplicates
-        self.assertEqual(run(2026, 10, 13, 13, 0), [(early, "deadline_d7")])  # D-3 window missed (downtime): no catch-up
-        self.assertEqual(run(2026, 10, 15, 10, 5), [(early, "deadline_d1"), (early, "deadline_d7"), (late, "deadline_d1")])
-        with self.db.transaction() as conn:
-            conn.execute("UPDATE subscribers SET status='unsubscribed' WHERE id=?", (late,))
-        self.assertEqual(run(2026, 10, 16, 10, 5)[-2:], [(early, "deadline_day"), (late, "deadline_d1")])
+        self.assertEqual(run(2026, 10, 9, 7, 5), [])
+        self.assertEqual(run(2026, 10, 13, 7, 5), [])
+        expected = [(early, "deadline_d1"), (late, "deadline_d1")]
+        self.assertEqual(run(2026, 10, 15, 7, 5), expected)
+        self.assertEqual(run(2026, 10, 15, 7, 6), expected)
+        self.assertEqual(run(2026, 10, 16, 7, 5), expected)
         with self.db.connect() as conn:
             kinds = {row[0] for row in conn.execute("SELECT DISTINCT payload_json FROM notification_deliveries")}
         self.assertTrue(all('"deadline_id": 1' in kind for kind in kinds))  # the 活动时间 entry never triggers
 
+    def test_duplicate_deadline_labels_and_old_sent_reminders_do_not_repeat(self):
+        self.settings = replace(self.settings, digest_hours=(19,))
+        subscriber = self._active_subscriber()
+        notice_id = self._deadline_notice(datetime(2026, 10, 1, tzinfo=SEOUL))
+        with self.db.transaction() as conn:
+            conn.execute("""INSERT INTO deadlines(notice_id,kind,deadline_at,timezone,original_text,confidence)
+                            SELECT notice_id,'材料提交截止',deadline_at,timezone,original_text,confidence
+                            FROM deadlines WHERE notice_id=? AND kind='报名截止'""", (notice_id,))
+        planner = ReminderPlanner(self.db, self.settings)
+        when = datetime(2026, 10, 15, 19, 5, tzinfo=SEOUL)
+        self.assertEqual(planner.run(when), 1)
+        self.assertEqual(planner.run(when), 0)
+        with self.db.transaction() as conn:
+            conn.execute("""UPDATE notification_deliveries SET status='sent',notification_type='deadline_d7'
+                            WHERE subscriber_id=?""", (subscriber,))
+        self.assertEqual(planner.run(when), 0)
+
+    def test_recent_notice_suppresses_reminder_but_older_notice_does_not(self):
+        subscriber = self._active_subscriber()
+        notice_id = self._deadline_notice(datetime(2026, 10, 1, tzinfo=SEOUL))
+        now = datetime(2026, 10, 15, 19, 5, tzinfo=SEOUL)
+        with self.db.transaction() as conn:
+            conn.execute("""INSERT INTO notification_deliveries(subscriber_id,notice_id,notification_type,
+                            dedupe_key,scheduled_at,status,sent_at,created_at)
+                            VALUES(?,?,'daily_digest','original',?,'sent',?,?)""",
+                         (subscriber, notice_id, iso_utc(now), iso_utc(now), iso_utc(now)))
+        ReminderPlanner(self.db, self.settings).run(now)
+        mailer = FakeMailer()
+        with mock.patch("pnu_notice.timeutil.now_utc", return_value=now):
+            result = DeliveryWorker(self.db, self.settings, mailer).process_due()
+        self.assertEqual(result['skipped'], 1)
+        self.assertEqual(mailer.sent, [])
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE notification_deliveries SET sent_at=? WHERE dedupe_key='original'",
+                         (iso_utc(datetime(2026, 10, 13, 19, 0, tzinfo=SEOUL)),))
+            conn.execute("UPDATE notification_deliveries SET status='pending' WHERE notification_type='deadline_d1'")
+        with mock.patch("pnu_notice.timeutil.now_utc", return_value=now):
+            DeliveryWorker(self.db, self.settings, mailer).process_due()
+        self.assertEqual(len(mailer.sent), 1)
+
+    def test_old_pending_reminder_rounds_are_cancelled(self):
+        subscriber = self._active_subscriber()
+        notice_id = self._deadline_notice(datetime(2026, 10, 1, tzinfo=SEOUL))
+        with self.db.transaction() as conn:
+            for days, kind in ((7, 'deadline_d7'), (3, 'deadline_d3'), (0, 'deadline_day')):
+                conn.execute("""INSERT INTO notification_deliveries(subscriber_id,notice_id,notification_type,
+                                dedupe_key,scheduled_at,status,payload_json,created_at)
+                                VALUES(?,?,?,?,?,'pending','{"deadline_id":1}',?)""",
+                             (subscriber, notice_id, kind, f'deadline:1:{days}', iso_utc(), iso_utc()))
+        ReminderPlanner(self.db, self.settings).run(datetime(2026, 10, 7, 8, tzinfo=SEOUL))
+        with self.db.connect() as conn:
+            self.assertEqual([r[0] for r in conn.execute("SELECT status FROM notification_deliveries")],
+                             ['cancelled'] * 3)
+
     def test_due_reminders_become_one_email_and_old_scheduled_ones_are_cancelled(self):
         subscriber = self._active_subscriber()
         notice_id = self._deadline_notice(datetime(2026, 10, 1, tzinfo=SEOUL))
-        now = iso_utc()
+        now = iso_utc(datetime(2026, 10, 15, 7, 5, tzinfo=SEOUL))
         with self.db.transaction() as conn:
             conn.execute("""INSERT INTO notification_deliveries(subscriber_id,notice_id,notification_type,dedupe_key,scheduled_at,
                             status,payload_json,created_at) VALUES(?,?,'deadline_d3','deadline_d3:1:oldhash',?,'pending','{}',?)""",
@@ -486,7 +550,8 @@ class PnuNoticeTests(unittest.TestCase):
                              (subscriber, notice_id, f"deadline:{deadline_id}:1", now, json.dumps({"deadline_id": deadline_id}), now))
         ReminderPlanner(self.db, self.settings).run(datetime(2026, 10, 7, 8, tzinfo=SEOUL))
         mailer = FakeMailer()
-        DeliveryWorker(self.db, self.settings, mailer).process_due()
+        with mock.patch("pnu_notice.timeutil.now_utc", return_value=datetime(2026, 10, 15, 7, 5, tzinfo=SEOUL)):
+            DeliveryWorker(self.db, self.settings, mailer).process_due()
         self.assertEqual(len(mailer.sent), 1)
         _, subject, body, _ = mailer.sent[0]
         self.assertIn("[截止提醒] 2 项即将截止", subject)

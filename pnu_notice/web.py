@@ -265,7 +265,7 @@ def home_page(view: View, deleted: bool = False, stats: dict | None = None) -> s
 
     <h2 class="section-title">为留学生设计</h2><p class="section-sub">读懂韩文公告，不再靠翻译软件逐句猜</p>
     <div class="cards4"><div class="feature">{icon("bolt")}<h3>重要事项即时提醒</h3><p>签证、奖学金、毕业、选课等公告分析完成后立即发送，周末也不例外。</p></div>
-    <div class="feature">{icon("clock")}<h3>截止日期提醒</h3><p>申请、报名、提交等截止前 7 天、3 天、1 天和当天上午 {min(view.settings.digest_hours)}:00 提醒你。</p></div>
+    <div class="feature">{icon("clock")}<h3>截止日期提醒</h3><p>申请、报名、提交等截止前一天 {min(view.settings.digest_hours)}:00 提醒你。</p></div>
     <div class="feature">{icon("text")}<h3>准确的中文摘要</h3><p>说明这是什么、谁需要关注、要做什么，并保留原文日期和学校原公告链接。</p></div>
     <div class="feature">{icon("shield")}<h3>只收集邮箱</h3><p>不需要姓名、学号或手机号。每封邮件都能一键退订，也可以随时注销。</p></div></div>
 

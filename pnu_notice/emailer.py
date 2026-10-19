@@ -150,10 +150,10 @@ def welcome_email(settings: Settings, subscriber: dict, subscriptions: list[dict
     plan = []
     if immediate:
         plan.append(("重要公告", "签证、奖学金、毕业等重要事项，分析完成后立即发送。"))
-        plan.append(("截止提醒", f"申请、报名、提交等截止日期前 7 天、3 天、1 天和当天上午 {min(settings.digest_hours)}:00 提醒"
-                                "（订阅之前已发布的公告只提醒前 1 天和当天）。"))
+        plan.append(("截止提醒", f"申请、报名、提交等截止日期前一天 {min(settings.digest_hours)}:00 提醒"
+                                "（同一公告的同一截止时间只提醒一次）。"))
     if daily:
-        plan.append(("普通公告", f"工作日 {hours}（首尔时间）合并成一封汇总，发布后通常 4 小时内收到。"))
+        plan.append(("普通公告", f"工作日 {hours}（首尔时间）合并成一封汇总，周末公告顺延至周一发送。"))
     if weekly:
         plan.append(("低优先级公告", f"讲座、活动、宣传等，每周{weekday} {settings.weekly_digest_hour}:00 汇总一次。"))
     rows = "".join(f"<tr><td style='padding:10px 12px;font-weight:bold;white-space:nowrap;vertical-align:top'>{html.escape(name)}</td>"
